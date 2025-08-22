@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atkin Guitars Leave Calendar</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'><path d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/></svg>">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -277,8 +278,8 @@
               setEmployeeForm({
                 name: employee.name,
                 department: employee.department,
-                totalLeave: employee.totalLeave,
-                usedLeave: employee.usedLeave,
+                totalLeave: Number(employee.totalLeave),
+                usedLeave: Number(employee.usedLeave),
                 color: employee.color
               });
             } else {
@@ -319,8 +320,8 @@
                       ...emp,
                       name: employeeForm.name,
                       department: employeeForm.department,
-                      totalLeave: parseInt(employeeForm.totalLeave),
-                      usedLeave: parseInt(employeeForm.usedLeave),
+                      totalLeave: Number(employeeForm.totalLeave),
+                      usedLeave: Number(employeeForm.usedLeave),
                       color: employeeForm.color,
                       avatar: generateInitials(employeeForm.name)
                     }
@@ -332,8 +333,8 @@
                 id: newId,
                 name: employeeForm.name,
                 department: employeeForm.department,
-                totalLeave: parseInt(employeeForm.totalLeave),
-                usedLeave: parseInt(employeeForm.usedLeave),
+                totalLeave: Number(employeeForm.totalLeave),
+                usedLeave: Number(employeeForm.usedLeave),
                 avatar: generateInitials(employeeForm.name),
                 color: employeeForm.color
               };
@@ -708,7 +709,7 @@
                         <input
                           type="number"
                           value={employeeForm.totalLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: parseInt(e.target.value) || 0}))}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: Number(e.target.value) || 0}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                           max="400"
@@ -725,13 +726,13 @@
                         <input
                           type="number"
                           value={employeeForm.usedLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: Math.min(parseInt(e.target.value) || 0, parseInt(employeeForm.totalLeave) || 0)}))}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: Math.min(Number(e.target.value) || 0, Number(employeeForm.totalLeave) || 0)}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                           max={employeeForm.totalLeave}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Remaining: {formatHours((parseInt(employeeForm.totalLeave) || 0) - (parseInt(employeeForm.usedLeave) || 0))}
+                          Remaining: {formatHours((Number(employeeForm.totalLeave) || 0) - (Number(employeeForm.usedLeave) || 0))}
                         </p>
                       </div>
                       

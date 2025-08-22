@@ -580,7 +580,9 @@
                             key: index,
                             className: `${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
                               !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                            } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`
+                            } ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${
+                              (date.getDay() === 0 || date.getDay() === 6) ? 'bg-gray-100' : ''
+                            }`
                           },
                             React.createElement('div', {className: "flex justify-between items-start mb-1"},
                               React.createElement('div', {
@@ -611,7 +613,7 @@
                                 return React.createElement('div', {
                                   key: leave.id,
                                   className: `text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`,
-                                  title: `${employee.name} - ${leave.type}`
+                                  title: leave.type
                                 },
                                   React.createElement('span', {className: "truncate flex-1"}, employee.name.split(' ')[0]),
                                   React.createElement('button', {

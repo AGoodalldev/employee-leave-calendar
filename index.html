@@ -291,7 +291,7 @@
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelLeaveRequest(leave);
+                                    cancelSingleDayLeave(leave, month);
                                   }}
                                   className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded transition-all"
                                   title="Cancel leave"
@@ -368,7 +368,7 @@
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      cancelLeaveRequest(leave);
+                                      cancelSingleDayLeave(leave, date);
                                     }}
                                     className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded transition-all flex-shrink-0"
                                     title="Cancel leave"
@@ -534,6 +534,86 @@
               setEmployees(prev => prev.map(emp => 
                 emp.id === leaveRequest.employeeId
                   ? { ...emp, usedLeave: emp.usedLeave - leaveRequest.hours }
+                  : emp
+              ));
+            }
+          };
+
+          const cancelSingleDayLeave = (leaveRequest, specificDate) => {
+            const employee = employees.find(emp => emp.id === leaveRequest.employeeId);
+            if (confirm(`Cancel leave for ${employee?.name} on ${specificDate.toLocaleDateString()}?`)) {
+              const leaveStart = new Date(leaveRequest.startDate);
+              const leaveEnd = new Date(leaveRequest.endDate);
+              const cancelDate = new Date(specificDate);
+              
+              // If it's a single day leave, just delete the whole request
+              if (leaveStart.toDateString() === leaveEnd.toDateString()) {
+                setLeaveRequests(prev => prev.filter(req => req.id !== leaveRequest.id));
+                setEmployees(prev => prev.map(emp => 
+                  emp.id === leaveRequest.employeeId
+                    ? { ...emp, usedLeave: emp.usedLeave - leaveRequest.hours }
+                    : emp
+                ));
+                return;
+              }
+              
+              // For multi-day leave, we need to split or adjust the request
+              const dailyHours = 8; // Assuming 8 hours per day
+              
+              if (cancelDate.toDateString() === leaveStart.toDateString()) {
+                // Canceling first day - move start date to next day
+                const newStartDate = new Date(leaveStart);
+                newStartDate.setDate(leaveStart.getDate() + 1);
+                
+                setLeaveRequests(prev => prev.map(req => 
+                  req.id === leaveRequest.id
+                    ? { ...req, startDate: newStartDate, hours: req.hours - dailyHours }
+                    : req
+                ));
+              } else if (cancelDate.toDateString() === leaveEnd.toDateString()) {
+                // Canceling last day - move end date to previous day
+                const newEndDate = new Date(leaveEnd);
+                newEndDate.setDate(leaveEnd.getDate() - 1);
+                
+                setLeaveRequests(prev => prev.map(req => 
+                  req.id === leaveRequest.id
+                    ? { ...req, endDate: newEndDate, hours: req.hours - dailyHours }
+                    : req
+                ));
+              } else {
+                // Canceling middle day - split into two requests
+                const newEndDate1 = new Date(cancelDate);
+                newEndDate1.setDate(cancelDate.getDate() - 1);
+                
+                const newStartDate2 = new Date(cancelDate);
+                newStartDate2.setDate(cancelDate.getDate() + 1);
+                
+                // Calculate days for each part
+                const days1 = Math.ceil((newEndDate1 - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
+                const days2 = Math.ceil((leaveEnd - newStartDate2) / (1000 * 60 * 60 * 24)) + 1;
+                
+                const newId = Math.max(...leaveRequests.map(req => req.id)) + 1;
+                
+                setLeaveRequests(prev => [
+                  ...prev.filter(req => req.id !== leaveRequest.id),
+                  {
+                    ...leaveRequest,
+                    endDate: newEndDate1,
+                    hours: days1 * dailyHours
+                  },
+                  {
+                    ...leaveRequest,
+                    id: newId,
+                    startDate: newStartDate2,
+                    hours: days2 * dailyHours
+                  }
+                ]);
+              }
+              
+              // Return 8 hours back to the employee
+              setEmployees(prev => prev.map(emp => 
+                emp.id === leaveRequest.employeeId
+                  ? { ...emp, usedLeave: emp.usedLeave - dailyHours }
                   : emp
               ));
             }

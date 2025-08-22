@@ -20,7 +20,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo } = React;
+        const { useState, useMemo, useEffect } = React;
         
         // Simple icon components
         const Calendar = ({ className, style }) => (
@@ -173,7 +173,7 @@
           };
 
           // Check for year change when component mounts or date changes
-          React.useEffect(() => {
+          useEffect(() => {
             checkAndResetLeave();
           }, [currentDate, lastResetYear]);
 

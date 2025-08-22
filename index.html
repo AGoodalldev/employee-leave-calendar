@@ -26,6 +26,11 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .connection-indicator.hide {
+            opacity: 0;
+            transform: translateX(100%);
         }
         .connected { background-color: #10B981; color: white; }
         .disconnected { background-color: #EF4444; color: white; }
@@ -311,6 +316,7 @@
           const [lastSyncTime, setLastSyncTime] = useState(null);
           const [pendingOperations, setPendingOperations] = useState(0);
           const [notifications, setNotifications] = useState([]);
+          const [showConnectionIndicator, setShowConnectionIndicator] = useState(true);
           
           // Database API instance
           const [dbApi] = useState(() => new DatabaseAPI());
@@ -391,8 +397,14 @@
                 setEmployees(employeesData);
                 setLeaveRequests(leaveRequestsData);
                 setConnectionStatus('connected');
+                setShowConnectionIndicator(true);
                 setLastSyncTime(new Date());
                 addNotification('Data loaded successfully', 'success');
+                
+                // Hide connection indicator after 3 seconds
+                setTimeout(() => {
+                  setShowConnectionIndicator(false);
+                }, 3000);
               } catch (error) {
                 setConnectionStatus('disconnected');
                 addNotification('Failed to load data - working offline', 'error');
@@ -425,23 +437,37 @@
           useEffect(() => {
             const handleOnline = () => {
               setConnectionStatus('connected');
+              setShowConnectionIndicator(true);
               addNotification('Connection restored - syncing data...', 'success');
               dbApi.processQueue();
+              
+              // Hide connection indicator after 3 seconds when connected
+              setTimeout(() => {
+                setShowConnectionIndicator(false);
+              }, 3000);
             };
 
             const handleOffline = () => {
               setConnectionStatus('disconnected');
+              setShowConnectionIndicator(true);
               addNotification('Working offline - changes will sync when reconnected', 'info');
             };
 
             window.addEventListener('online', handleOnline);
             window.addEventListener('offline', handleOffline);
 
+            // Hide connection indicator after initial connection
+            if (connectionStatus === 'connected') {
+              setTimeout(() => {
+                setShowConnectionIndicator(false);
+              }, 3000);
+            }
+
             return () => {
               window.removeEventListener('online', handleOnline);
               window.removeEventListener('offline', handleOffline);
             };
-          }, [dbApi, addNotification]);
+          }, [dbApi, addNotification, connectionStatus]);
 
           const generateInitials = (name) => {
             return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
@@ -694,7 +720,7 @@
           return (
             <div className="min-h-screen bg-gray-50">
               {/* Connection Status Indicator */}
-              <div className={`connection-indicator ${connectionStatus}`}>
+              <div className={`connection-indicator ${connectionStatus} ${!showConnectionIndicator ? 'hide' : ''}`}>
                 {connectionStatus === 'connected' && (
                   <>
                     <Wifi className="h-4 w-4" />
@@ -753,6 +779,15 @@
                       >
                         <UserAdd className="h-4 w-4" />
                         <span>Add Employee</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => syncData()}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        disabled={pendingOperations > 0}
+                      >
+                        <Sync className={`h-4 w-4 ${pendingOperations > 0 ? 'sync-indicator' : ''}`} />
+                        <span>{pendingOperations > 0 ? 'Syncing...' : 'Sync Now'}</span>
                       </button>
                     </div>
                   </div>

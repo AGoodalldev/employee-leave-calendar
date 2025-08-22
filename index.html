@@ -403,7 +403,9 @@
                           key={index}
                           className={`${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
                             !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                          } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`}
+                          } ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${
+                            (date.getDay() === 0 || date.getDay() === 6) ? 'bg-gray-100' : ''
+                          }`}
                         >
                           <div className="flex justify-between items-center mb-1">
                             <div className={`text-sm font-medium ${
@@ -415,7 +417,7 @@
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openQuickLeaveModal(date);
+                                  openQuickLeaveModal(new Date(date));
                                 }}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600"
                                 title="Add leave for this day"

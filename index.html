@@ -72,6 +72,7 @@
           const [showEmployeeModal, setShowEmployeeModal] = useState(false);
           const [selectedDate, setSelectedDate] = useState(null);
           const [editingEmployee, setEditingEmployee] = useState(null);
+          const [lastResetYear, setLastResetYear] = useState(new Date().getFullYear());
           
           const [employees, setEmployees] = useState([
             {
@@ -146,6 +147,49 @@
 
           const generateInitials = (name) => {
             return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
+          };
+
+          // Check if we need to reset leave for the new year
+          const checkAndResetLeave = () => {
+            const currentYear = new Date().getFullYear();
+            if (currentYear > lastResetYear) {
+              // Reset all employees' used leave to 0
+              setEmployees(prev => prev.map(emp => ({
+                ...emp,
+                usedLeave: 0
+              })));
+              
+              // Clear all leave requests from previous years
+              setLeaveRequests(prev => prev.filter(req => {
+                const leaveYear = new Date(req.startDate).getFullYear();
+                return leaveYear >= currentYear;
+              }));
+              
+              setLastResetYear(currentYear);
+              
+              // Show notification
+              alert(`🎉 Happy New Year! All employee leave balances have been reset for ${currentYear}.`);
+            }
+          };
+
+          // Check for year change when component mounts or date changes
+          React.useEffect(() => {
+            checkAndResetLeave();
+          }, [currentDate, lastResetYear]);
+
+          // Manual reset function (for testing or manual reset)
+          const manualResetLeave = () => {
+            if (confirm('Reset all employee leave balances to 0? This will also clear all existing leave requests.')) {
+              setEmployees(prev => prev.map(emp => ({
+                ...emp,
+                usedLeave: 0
+              })));
+              
+              setLeaveRequests([]);
+              setLastResetYear(new Date().getFullYear());
+              
+              alert('✅ All leave balances have been reset!');
+            }
           };
 
           const formatHours = (hours) => {
@@ -655,6 +699,15 @@
                       >
                         <UserAdd className="h-4 w-4" />
                         <span>Add Employee</span>
+                      </button>
+                      
+                      <button 
+                        onClick={manualResetLeave}
+                        className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                        title="Reset all leave balances to 0"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        <span>Reset Leave</span>
                       </button>
                     </div>
                   </div>

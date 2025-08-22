@@ -101,6 +101,7 @@
         );
 
         const LeaveCalendar = () => {
+          // All state declarations
           const [currentDate, setCurrentDate] = useState(new Date());
           const [viewMode, setViewMode] = useState('month');
           const [selectedEmployee, setSelectedEmployee] = useState('all');
@@ -111,6 +112,32 @@
           const [selectedDate, setSelectedDate] = useState(null);
           const [editingEmployee, setEditingEmployee] = useState(null);
           const [searchTerm, setSearchTerm] = useState('');
+          
+          // Form state
+          const [employeeForm, setEmployeeForm] = useState({
+            name: '',
+            department: '',
+            totalLeave: 160,
+            usedLeave: 0,
+            color: '#3B82F6'
+          });
+
+          const [leaveForm, setLeaveForm] = useState({
+            employeeId: '',
+            startDate: '',
+            endDate: '',
+            type: 'Annual Leave',
+            timeEntry: 'days',
+            days: 1,
+            hours: 8,
+            notes: ''
+          });
+
+          const [quickLeaveForm, setQuickLeaveForm] = useState({
+            employeeId: '',
+            days: 1,
+            type: 'Annual Leave'
+          });
           
           const [employees, setEmployees] = useState([
             {
@@ -415,15 +442,8 @@
                             </div>
                             {isCurrentMonth && (
                               <span 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
-                                  setQuickLeaveForm({
-                                    employeeId: employees.length > 0 ? employees[0].id.toString() : '',
-                                    days: 1,
-                                    type: 'Annual Leave'
-                                  });
-                                  setShowQuickLeaveModal(true);
+                                onClick={() => {
+                                  alert('Plus button clicked for ' + date.toLocaleDateString());
                                 }}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer select-none"
                                 title="Add leave for this day"
@@ -799,18 +819,13 @@
                       
                       <button 
                         onClick={() => {
-                          setSelectedDate(new Date());
-                          setQuickLeaveForm({
-                            employeeId: employees.length > 0 ? employees[0].id.toString() : '',
-                            days: 1,
-                            type: 'Annual Leave'
-                          });
-                          setShowQuickLeaveModal(true);
+                          console.log('Test button clicked!');
+                          alert('Test button works!');
                         }}
                         className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                       >
                         <Plus className="h-4 w-4" />
-                        <span>Test Quick Leave</span>
+                        <span>Test Basic Click</span>
                       </button>
                       
                       <button 

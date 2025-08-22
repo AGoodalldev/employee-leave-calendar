@@ -415,11 +415,14 @@
                             </div>
                             {isCurrentMonth && (
                               <button
+                                type="button"
                                 onClick={(e) => {
+                                  e.preventDefault();
                                   e.stopPropagation();
-                                  openQuickLeaveModal(new Date(date));
+                                  console.log('Plus button clicked for date:', date); // Debug log
+                                  openQuickLeaveModal(date);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer"
                                 title="Add leave for this day"
                               >
                                 +
@@ -641,7 +644,9 @@
 
           // Quick Leave Functions
           const openQuickLeaveModal = (date) => {
-            setSelectedDate(date);
+            console.log('Opening quick leave modal for date:', date); // Debug log
+            const dateToUse = new Date(date.getTime()); // Create a proper copy
+            setSelectedDate(dateToUse);
             setQuickLeaveForm({
               employeeId: employees.length > 0 ? employees[0].id.toString() : '',
               days: 1,
@@ -970,12 +975,12 @@
               </div>
 
               {/* Quick Leave Modal */}
-              {showQuickLeaveModal && (
+              {showQuickLeaveModal && selectedDate && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-xl p-6 w-full max-w-md">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold">
-                        Quick Add Leave - {selectedDate?.toLocaleDateString()}
+                        Quick Add Leave - {selectedDate.toLocaleDateString()}
                       </h3>
                       <button 
                         onClick={closeQuickLeaveModal}

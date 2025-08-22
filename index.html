@@ -107,6 +107,8 @@
           const [showSettings, setShowSettings] = useState(false);
           const [showEmployeeModal, setShowEmployeeModal] = useState(false);
           const [showLeaveModal, setShowLeaveModal] = useState(false);
+          const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
+          const [selectedDate, setSelectedDate] = useState(null);
           const [editingEmployee, setEditingEmployee] = useState(null);
           const [searchTerm, setSearchTerm] = useState('');
           
@@ -399,14 +401,28 @@
                       return (
                         <div
                           key={index}
-                          className={`${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors ${
+                          className={`${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
                             !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
                           } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`}
                         >
-                          <div className={`text-sm font-medium mb-1 ${
-                            isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                          }`}>
-                            {viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
+                          <div className="flex justify-between items-center mb-1">
+                            <div className={`text-sm font-medium ${
+                              isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                            }`}>
+                              {viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
+                            </div>
+                            {isCurrentMonth && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openQuickLeaveModal(date);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600"
+                                title="Add leave for this day"
+                              >
+                                +
+                              </button>
+                            )}
                           </div>
                           
                           <div className="space-y-1">
@@ -619,6 +635,97 @@
             ));
 
             closeLeaveModal();
+          };
+
+          // Quick Leave Functions
+          const openQuickLeaveModal = (date) => {
+            setSelectedDate(date);
+            setQuickLeaveForm({
+              employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+              days: 1,
+              type: 'Annual Leave'
+            });
+            setShowQuickLeaveModal(true);
+          };
+
+          const closeQuickLeaveModal = () => {
+            setShowQuickLeaveModal(false);
+            setSelectedDate(null);
+            setQuickLeaveForm({
+              employeeId: '',
+              days: 1,
+              type: 'Annual Leave'
+            });
+          };
+
+          const saveQuickLeave = () => {
+            if (!quickLeaveForm.employeeId || !selectedDate) {
+              alert('Please select an employee');
+              return;
+            }
+
+            const days = parseInt(quickLeaveForm.days) || 1;
+            const totalHours = days * 8;
+            const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
+            
+            if (!employee) {
+              alert('Please select a valid employee');
+              return;
+            }
+
+            // Check if employee has enough leave remaining
+            const remainingLeave = employee.totalLeave - employee.usedLeave;
+            if (totalHours > remainingLeave) {
+              alert(`Employee only has ${formatHours(remainingLeave)} remaining. This request requires ${formatHours(totalHours)}.`);
+              return;
+            }
+
+            // Calculate end date based on number of days
+            const startDate = new Date(selectedDate);
+            const endDate = new Date(selectedDate);
+            
+            // Skip weekends when calculating business days
+            let daysToAdd = days - 1; // -1 because start date counts as day 1
+            let currentDate = new Date(startDate);
+            
+            while (daysToAdd > 0) {
+              currentDate.setDate(currentDate.getDate() + 1);
+              // Skip weekends (0 = Sunday, 6 = Saturday)
+              if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+                daysToAdd--;
+              }
+            }
+            
+            // For single day leave, end date = start date
+            if (days === 1) {
+              endDate.setTime(startDate.getTime());
+            } else {
+              endDate.setTime(currentDate.getTime());
+            }
+
+            // Create new leave request
+            const newLeaveRequest = {
+              id: Math.max(...leaveRequests.map(req => req.id), 0) + 1,
+              employeeId: parseInt(quickLeaveForm.employeeId),
+              startDate: startDate,
+              endDate: endDate,
+              type: quickLeaveForm.type,
+              status: 'pending',
+              hours: totalHours,
+              notes: `Quick add: ${days} day${days > 1 ? 's' : ''} starting ${startDate.toLocaleDateString()}`
+            };
+
+            // Add leave request
+            setLeaveRequests(prev => [...prev, newLeaveRequest]);
+
+            // Update employee's used leave
+            setEmployees(prev => prev.map(emp => 
+              emp.id === parseInt(quickLeaveForm.employeeId)
+                ? { ...emp, usedLeave: emp.usedLeave + totalHours }
+                : emp
+            ));
+
+            closeQuickLeaveModal();
           };
 
           return (
@@ -859,6 +966,160 @@
                   </div>
                 </div>
               </div>
+
+              {/* Quick Leave Modal */}
+              {showQuickLeaveModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">
+                        Quick Add Leave - {selectedDate?.toLocaleDateString()}
+                      </h3>
+                      <button 
+                        onClick={closeQuickLeaveModal}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Employee *
+                        </label>
+                        <select
+                          value={quickLeaveForm.employeeId}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Employee</option>
+                          {employees.map(emp => {
+                            const remaining = emp.totalLeave - emp.usedLeave;
+                            return (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name} - {formatHours(remaining)} remaining
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Number of Days
+                        </label>
+                        <select
+                          value={quickLeaveForm.days}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, days: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="0.5">Half Day (4 hours)</option>
+                          <option value="1">1 Day (8 hours)</option>
+                          <option value="2">2 Days (16 hours)</option>
+                          <option value="3">3 Days (24 hours)</option>
+                          <option value="4">4 Days (32 hours)</option>
+                          <option value="5">5 Days (40 hours)</option>
+                          <option value="10">10 Days (80 hours)</option>
+                          <option value="15">15 Days (120 hours)</option>
+                          <option value="20">20 Days (160 hours)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Total hours: {(parseFloat(quickLeaveForm.days) * 8) || 0}h
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leave Type
+                        </label>
+                        <select
+                          value={quickLeaveForm.type}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="Annual Leave">Annual Leave</option>
+                          <option value="Sick Leave">Sick Leave</option>
+                          <option value="Personal Leave">Personal Leave</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
+                      {selectedDate && quickLeaveForm.days && (
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <div className="text-sm text-blue-800">
+                            <strong>Leave Details:</strong>
+                            <div className="mt-1">
+                              Start: {selectedDate.toLocaleDateString()}
+                              <br />
+                              {(() => {
+                                const days = parseFloat(quickLeaveForm.days);
+                                if (days <= 1) {
+                                  return `Duration: ${days === 0.5 ? 'Half day' : '1 day'}`;
+                                } else {
+                                  // Calculate business days end date
+                                  const endDate = new Date(selectedDate);
+                                  let daysToAdd = Math.floor(days) - 1;
+                                  let currentDate = new Date(selectedDate);
+                                  
+                                  while (daysToAdd > 0) {
+                                    currentDate.setDate(currentDate.getDate() + 1);
+                                    if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+                                      daysToAdd--;
+                                    }
+                                  }
+                                  
+                                  return `End: ${currentDate.toLocaleDateString()} (${days} days)`;
+                                }
+                              })()}
+                              <br />
+                              Total: {(parseFloat(quickLeaveForm.days) * 8) || 0} hours
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {quickLeaveForm.employeeId && (
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="text-sm text-gray-700">
+                            <strong>Employee Leave Balance:</strong>
+                            {(() => {
+                              const emp = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
+                              if (!emp) return null;
+                              const remaining = emp.totalLeave - emp.usedLeave;
+                              const requestHours = (parseFloat(quickLeaveForm.days) * 8) || 0;
+                              const afterLeave = remaining - requestHours;
+                              return (
+                                <div className="mt-1">
+                                  Current: {formatHours(remaining)} • After: {formatHours(afterLeave)}
+                                  {afterLeave < 0 && (
+                                    <div className="text-red-600 text-xs mt-1">⚠️ This request exceeds available leave</div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="flex justify-end space-x-3 pt-4">
+                        <button 
+                          onClick={closeQuickLeaveModal}
+                          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={saveQuickLeave}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Add Leave
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Leave Request Modal */}
               {showLeaveModal && (

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atkin Guitars Leave Calendar</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'><path d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/></svg>">
+    <title>Atkin Guitars Leave Calendar - Real-time</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'><path d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z'/></svg>">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -14,13 +14,70 @@
             margin: 0; 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; 
         }
+        .connection-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .connected {
+            background-color: #10B981;
+            color: white;
+        }
+        .disconnected {
+            background-color: #EF4444;
+            color: white;
+        }
+        .connecting {
+            background-color: #F59E0B;
+            color: white;
+        }
+        .sync-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: white;
+            max-width: 300px;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+        }
+        .notification.show {
+            transform: translateX(0);
+        }
+        .notification.success {
+            background-color: #10B981;
+        }
+        .notification.error {
+            background-color: #EF4444;
+        }
+        .notification.info {
+            background-color: #3B82F6;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useCallback, useRef } = React;
         
         // Simple icon components
         const Calendar = ({ className, style }) => (
@@ -65,6 +122,315 @@
             </svg>
         );
 
+        const Wifi = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+            </svg>
+        );
+
+        const WifiOff = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-12.728 12.728m0 0L1.394 14.122m4.242 4.242a5.5 5.5 0 007.778 0m7.778-7.778a10.97 10.97 0 00-3.536-2.464m-6.242 6.242L7.758 8.879m0 0a10.97 10.97 0 00-3.536 2.464" />
+            </svg>
+        );
+
+        const Sync = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+        );
+
+        // Mock Database API - In production, replace with real backend
+        class DatabaseAPI {
+            constructor() {
+                this.baseUrl = 'https://api.atkinguitars-demo.com'; // Replace with real API
+                this.isOnline = navigator.onLine;
+                this.queue = [];
+                this.lastSync = null;
+                this.syncInProgress = false;
+                
+                // Listen for online/offline events
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    this.processQueue();
+                });
+                
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                });
+            }
+
+            // Simulate API calls for demo purposes
+            async makeRequest(endpoint, method = 'GET', data = null) {
+                // Simulate network delay
+                await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 200));
+                
+                // Simulate occasional network errors
+                if (Math.random() < 0.05) {
+                    throw new Error('Network error');
+                }
+
+                const key = `atkin_${endpoint.replace('/', '_')}`;
+                
+                switch (method) {
+                    case 'GET':
+                        const stored = localStorage.getItem(key);
+                        return stored ? JSON.parse(stored) : [];
+                    
+                    case 'POST':
+                    case 'PUT':
+                        localStorage.setItem(key, JSON.stringify(data));
+                        return data;
+                    
+                    case 'DELETE':
+                        localStorage.removeItem(key);
+                        return { success: true };
+                    
+                    default:
+                        throw new Error('Unsupported method');
+                }
+            }
+
+            async fetchEmployees() {
+                try {
+                    const employees = await this.makeRequest('employees');
+                    return employees.length > 0 ? employees : this.getDefaultEmployees();
+                } catch (error) {
+                    console.error('Failed to fetch employees:', error);
+                    return this.getDefaultEmployees();
+                }
+            }
+
+            async fetchLeaveRequests() {
+                try {
+                    const requests = await this.makeRequest('leave-requests');
+                    return requests.map(req => ({
+                        ...req,
+                        startDate: new Date(req.startDate),
+                        endDate: new Date(req.endDate)
+                    }));
+                } catch (error) {
+                    console.error('Failed to fetch leave requests:', error);
+                    return this.getDefaultLeaveRequests();
+                }
+            }
+
+            async saveEmployee(employee) {
+                if (!this.isOnline) {
+                    this.queue.push({ type: 'employee', action: 'save', data: employee });
+                    throw new Error('Offline - queued for sync');
+                }
+                
+                try {
+                    const employees = await this.fetchEmployees();
+                    const index = employees.findIndex(emp => emp.id === employee.id);
+                    
+                    if (index >= 0) {
+                        employees[index] = employee;
+                    } else {
+                        employees.push(employee);
+                    }
+                    
+                    await this.makeRequest('employees', 'PUT', employees);
+                    return employee;
+                } catch (error) {
+                    this.queue.push({ type: 'employee', action: 'save', data: employee });
+                    throw error;
+                }
+            }
+
+            async saveLeaveRequest(request) {
+                if (!this.isOnline) {
+                    this.queue.push({ type: 'leave', action: 'save', data: request });
+                    throw new Error('Offline - queued for sync');
+                }
+                
+                try {
+                    const requests = await this.makeRequest('leave-requests');
+                    const serializedRequests = requests.map(req => ({
+                        ...req,
+                        startDate: req.startDate instanceof Date ? req.startDate.toISOString() : req.startDate,
+                        endDate: req.endDate instanceof Date ? req.endDate.toISOString() : req.endDate
+                    }));
+                    
+                    const serializedRequest = {
+                        ...request,
+                        startDate: request.startDate.toISOString(),
+                        endDate: request.endDate.toISOString()
+                    };
+                    
+                    const index = serializedRequests.findIndex(req => req.id === request.id);
+                    if (index >= 0) {
+                        serializedRequests[index] = serializedRequest;
+                    } else {
+                        serializedRequests.push(serializedRequest);
+                    }
+                    
+                    await this.makeRequest('leave-requests', 'PUT', serializedRequests);
+                    return request;
+                } catch (error) {
+                    this.queue.push({ type: 'leave', action: 'save', data: request });
+                    throw error;
+                }
+            }
+
+            async deleteEmployee(employeeId) {
+                if (!this.isOnline) {
+                    this.queue.push({ type: 'employee', action: 'delete', data: { id: employeeId } });
+                    throw new Error('Offline - queued for sync');
+                }
+                
+                try {
+                    const employees = await this.fetchEmployees();
+                    const filtered = employees.filter(emp => emp.id !== employeeId);
+                    await this.makeRequest('employees', 'PUT', filtered);
+                    return { success: true };
+                } catch (error) {
+                    this.queue.push({ type: 'employee', action: 'delete', data: { id: employeeId } });
+                    throw error;
+                }
+            }
+
+            async deleteLeaveRequest(requestId) {
+                if (!this.isOnline) {
+                    this.queue.push({ type: 'leave', action: 'delete', data: { id: requestId } });
+                    throw new Error('Offline - queued for sync');
+                }
+                
+                try {
+                    const requests = await this.makeRequest('leave-requests');
+                    const filtered = requests.filter(req => req.id !== requestId);
+                    const serializedRequests = filtered.map(req => ({
+                        ...req,
+                        startDate: req.startDate instanceof Date ? req.startDate.toISOString() : req.startDate,
+                        endDate: req.endDate instanceof Date ? req.endDate.toISOString() : req.endDate
+                    }));
+                    await this.makeRequest('leave-requests', 'PUT', serializedRequests);
+                    return { success: true };
+                } catch (error) {
+                    this.queue.push({ type: 'leave', action: 'delete', data: { id: requestId } });
+                    throw error;
+                }
+            }
+
+            async processQueue() {
+                if (this.syncInProgress || !this.isOnline || this.queue.length === 0) {
+                    return;
+                }
+                
+                this.syncInProgress = true;
+                const queueCopy = [...this.queue];
+                this.queue = [];
+                
+                for (const item of queueCopy) {
+                    try {
+                        switch (item.type) {
+                            case 'employee':
+                                if (item.action === 'save') {
+                                    await this.saveEmployee(item.data);
+                                } else if (item.action === 'delete') {
+                                    await this.deleteEmployee(item.data.id);
+                                }
+                                break;
+                            case 'leave':
+                                if (item.action === 'save') {
+                                    await this.saveLeaveRequest(item.data);
+                                } else if (item.action === 'delete') {
+                                    await this.deleteLeaveRequest(item.data.id);
+                                }
+                                break;
+                        }
+                    } catch (error) {
+                        // Re-queue failed items
+                        this.queue.push(item);
+                    }
+                }
+                
+                this.syncInProgress = false;
+                this.lastSync = new Date();
+            }
+
+            getDefaultEmployees() {
+                return [
+                    {
+                        id: 1,
+                        name: 'Sarah Johnson',
+                        department: 'Workshop',
+                        totalLeave: 200,
+                        usedLeave: 64,
+                        avatar: 'SJ',
+                        color: '#3B82F6'
+                    },
+                    {
+                        id: 2,
+                        name: 'Michael Chen',
+                        department: 'Finishing',
+                        totalLeave: 160,
+                        usedLeave: 32,
+                        avatar: 'MC',
+                        color: '#10B981'
+                    },
+                    {
+                        id: 3,
+                        name: 'Emma Davis',
+                        department: 'Administration',
+                        totalLeave: 180,
+                        usedLeave: 96,
+                        avatar: 'ED',
+                        color: '#F59E0B'
+                    }
+                ];
+            }
+
+            getDefaultLeaveRequests() {
+                return [
+                    {
+                        id: 1,
+                        employeeId: 1,
+                        startDate: new Date(2025, 7, 25),
+                        endDate: new Date(2025, 7, 29),
+                        type: 'Annual Leave',
+                        status: 'approved',
+                        hours: 40
+                    }
+                ];
+            }
+        }
+
+        // Notification system
+        const NotificationSystem = ({ notifications, removeNotification }) => {
+            useEffect(() => {
+                notifications.forEach(notification => {
+                    if (notification.autoRemove) {
+                        setTimeout(() => {
+                            removeNotification(notification.id);
+                        }, 5000);
+                    }
+                });
+            }, [notifications, removeNotification]);
+
+            return (
+                <div>
+                    {notifications.map(notification => (
+                        <div
+                            key={notification.id}
+                            className={`notification ${notification.type} ${notification.show ? 'show' : ''}`}
+                        >
+                            <div className="flex items-center justify-between">
+                                <span>{notification.message}</span>
+                                <button
+                                    onClick={() => removeNotification(notification.id)}
+                                    className="ml-2 text-white hover:text-gray-200"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
         const LeaveCalendar = () => {
           const [currentDate, setCurrentDate] = useState(new Date());
           const [viewMode, setViewMode] = useState('month');
@@ -74,113 +440,21 @@
           const [editingEmployee, setEditingEmployee] = useState(null);
           const [lastResetYear, setLastResetYear] = useState(new Date().getFullYear());
           
-          // Initialize employees from localStorage or use defaults
-          const [employees, setEmployees] = useState(() => {
-            try {
-              const saved = localStorage.getItem('atkin-employees');
-              return saved ? JSON.parse(saved) : [
-                {
-                  id: 1,
-                  name: 'Sarah Johnson',
-                  department: 'Workshop',
-                  totalLeave: 200,
-                  usedLeave: 64,
-                  avatar: 'SJ',
-                  color: '#3B82F6'
-                },
-                {
-                  id: 2,
-                  name: 'Michael Chen',
-                  department: 'Finishing',
-                  totalLeave: 160,
-                  usedLeave: 32,
-                  avatar: 'MC',
-                  color: '#10B981'
-                },
-                {
-                  id: 3,
-                  name: 'Emma Davis',
-                  department: 'Administration',
-                  totalLeave: 180,
-                  usedLeave: 96,
-                  avatar: 'ED',
-                  color: '#F59E0B'
-                }
-              ];
-            } catch (error) {
-              console.warn('Error loading employees from localStorage:', error);
-              return [
-                {
-                  id: 1,
-                  name: 'Sarah Johnson',
-                  department: 'Workshop',
-                  totalLeave: 200,
-                  usedLeave: 64,
-                  avatar: 'SJ',
-                  color: '#3B82F6'
-                },
-                {
-                  id: 2,
-                  name: 'Michael Chen',
-                  department: 'Finishing',
-                  totalLeave: 160,
-                  usedLeave: 32,
-                  avatar: 'MC',
-                  color: '#10B981'
-                },
-                {
-                  id: 3,
-                  name: 'Emma Davis',
-                  department: 'Administration',
-                  totalLeave: 180,
-                  usedLeave: 96,
-                  avatar: 'ED',
-                  color: '#F59E0B'
-                }
-              ];
-            }
-          });
-
-          // Initialize leave requests from localStorage or use defaults
-          const [leaveRequests, setLeaveRequests] = useState(() => {
-            try {
-              const saved = localStorage.getItem('atkin-leave-requests');
-              if (saved) {
-                const parsed = JSON.parse(saved);
-                // Convert date strings back to Date objects
-                return parsed.map(req => ({
-                  ...req,
-                  startDate: new Date(req.startDate),
-                  endDate: new Date(req.endDate)
-                }));
-              }
-              return [
-                {
-                  id: 1,
-                  employeeId: 1,
-                  startDate: new Date(2025, 7, 25),
-                  endDate: new Date(2025, 7, 29),
-                  type: 'Annual Leave',
-                  status: 'approved',
-                  hours: 40
-                }
-              ];
-            } catch (error) {
-              console.warn('Error loading leave requests from localStorage:', error);
-              return [
-                {
-                  id: 1,
-                  employeeId: 1,
-                  startDate: new Date(2025, 7, 25),
-                  endDate: new Date(2025, 7, 29),
-                  type: 'Annual Leave',
-                  status: 'approved',
-                  hours: 40
-                }
-              ];
-            }
-          });
-
+          // Real-time sync states
+          const [connectionStatus, setConnectionStatus] = useState('connecting');
+          const [lastSyncTime, setLastSyncTime] = useState(null);
+          const [pendingOperations, setPendingOperations] = useState(0);
+          const [notifications, setNotifications] = useState([]);
+          
+          // Database API instance
+          const [dbApi] = useState(() => new DatabaseAPI());
+          
+          // Data states
+          const [employees, setEmployees] = useState([]);
+          const [leaveRequests, setLeaveRequests] = useState([]);
+          const [isLoading, setIsLoading] = useState(true);
+          
+          // Form states
           const [quickLeaveForm, setQuickLeaveForm] = useState({
             employeeId: '1',
             days: 1,
@@ -210,90 +484,103 @@
             'July', 'August', 'September', 'October', 'November', 'December'
           ];
 
-          const generateInitials = (name) => {
-            return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
-          };
-
-          // Check if we need to reset leave for the new year
-          const checkAndResetLeave = () => {
-            const currentYear = new Date().getFullYear();
-            if (currentYear > lastResetYear) {
-              // Reset all employees' used leave to 0
-              setEmployees(prev => prev.map(emp => ({
-                ...emp,
-                usedLeave: 0
-              })));
-              
-              // Clear all leave requests from previous years
-              setLeaveRequests(prev => prev.filter(req => {
-                const leaveYear = new Date(req.startDate).getFullYear();
-                return leaveYear >= currentYear;
-              }));
-              
-              setLastResetYear(currentYear);
-              
-              // Show notification
-              alert(`🎉 Happy New Year! All employee leave balances have been reset for ${currentYear}.`);
-            }
-          };
-
-          // Save employees to localStorage whenever employees change
-          useEffect(() => {
-            try {
-              localStorage.setItem('atkin-employees', JSON.stringify(employees));
-            } catch (error) {
-              console.warn('Error saving employees to localStorage:', error);
-            }
-          }, [employees]);
-
-          // Save leave requests to localStorage whenever they change
-          useEffect(() => {
-            try {
-              localStorage.setItem('atkin-leave-requests', JSON.stringify(leaveRequests));
-            } catch (error) {
-              console.warn('Error saving leave requests to localStorage:', error);
-            }
-          }, [leaveRequests]);
-
-          // Save last reset year to localStorage
-          useEffect(() => {
-            try {
-              localStorage.setItem('atkin-last-reset-year', lastResetYear.toString());
-            } catch (error) {
-              console.warn('Error saving last reset year to localStorage:', error);
-            }
-          }, [lastResetYear]);
-
-          // Load last reset year from localStorage on component mount
-          useEffect(() => {
-            try {
-              const saved = localStorage.getItem('atkin-last-reset-year');
-              if (saved) {
-                setLastResetYear(parseInt(saved));
-              }
-            } catch (error) {
-              console.warn('Error loading last reset year from localStorage:', error);
-            }
+          // Notification helpers
+          const addNotification = useCallback((message, type = 'info', autoRemove = true) => {
+            const id = Date.now() + Math.random();
+            const notification = { id, message, type, autoRemove, show: false };
+            
+            setNotifications(prev => [...prev, notification]);
+            
+            // Trigger show animation
+            setTimeout(() => {
+              setNotifications(prev => 
+                prev.map(n => n.id === id ? { ...n, show: true } : n)
+              );
+            }, 100);
+            
+            return id;
           }, []);
 
-          // Check for year change when component mounts or date changes
-          useEffect(() => {
-            checkAndResetLeave();
-          }, [currentDate, lastResetYear]);
+          const removeNotification = useCallback((id) => {
+            setNotifications(prev => 
+              prev.map(n => n.id === id ? { ...n, show: false } : n)
+            );
+            
+            setTimeout(() => {
+              setNotifications(prev => prev.filter(n => n.id !== id));
+            }, 300);
+          }, []);
 
-          // Manual reset function (for testing or manual reset)
-          const manualResetLeave = () => {
-            if (confirm('Reset all employee leave balances to 0? This will also clear all existing leave requests.')) {
-              setEmployees(prev => prev.map(emp => ({
-                ...emp,
-                usedLeave: 0
-              })));
+          // Initial data loading
+          useEffect(() => {
+            const loadInitialData = async () => {
+              setIsLoading(true);
+              setConnectionStatus('connecting');
               
-              setLeaveRequests([]);
-              setLastResetYear(new Date().getFullYear());
-              
-              alert('✅ All leave balances have been reset!');
-            }
+              try {
+                const [employeesData, leaveRequestsData] = await Promise.all([
+                  dbApi.fetchEmployees(),
+                  dbApi.fetchLeaveRequests()
+                ]);
+                
+                setEmployees(employeesData);
+                setLeaveRequests(leaveRequestsData);
+                setConnectionStatus('connected');
+                setLastSyncTime(new Date());
+                addNotification('Data loaded successfully', 'success');
+              } catch (error) {
+                console.error('Failed to load initial data:', error);
+                setConnectionStatus('disconnected');
+                addNotification('Failed to load data - working offline', 'error');
+              } finally {
+                setIsLoading(false);
+              }
+            };
+            
+            loadInitialData();
+          }, [dbApi, addNotification]);
+
+          // Periodic sync
+          useEffect(() => {
+            const interval = setInterval(async () => {
+              if (navigator.onLine && connectionStatus === 'connected') {
+                try {
+                  await dbApi.processQueue();
+                  setLastSyncTime(new Date());
+                  setPendingOperations(dbApi.queue.length);
+                } catch (error) {
+                  console.error('Sync failed:', error);
+                }
+              }
+            }, 30000); // Sync every 30 seconds
+
+            return () => clearInterval(interval);
+          }, [dbApi, connectionStatus]);
+
+          // Connection status monitoring
+          useEffect(() => {
+            const handleOnline = () => {
+              setConnectionStatus('connected');
+              addNotification('Connection restored - syncing data...', 'success');
+              dbApi.processQueue();
+            };
+
+            const handleOffline = () => {
+              setConnectionStatus('disconnected');
+              addNotification('Working offline - changes will sync when reconnected', 'info');
+            };
+
+            window.addEventListener('online', handleOnline);
+            window.addEventListener('offline', handleOffline);
+
+            return () => {
+              window.removeEventListener('online', handleOnline);
+              window.removeEventListener('offline', handleOffline);
+            };
+          }, [dbApi, addNotification]);
+
+          const generateInitials = (name) => {
+            return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
           };
 
           const formatHours = (hours) => {
@@ -302,6 +589,7 @@
             return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
           };
 
+          // Calendar helper functions (same as before)
           const getCalendarDays = () => {
             if (viewMode === 'week') {
               return getWeekDays();
@@ -408,6 +696,58 @@
             if (viewMode === 'week') return 'grid-cols-7';
             if (viewMode === 'year') return 'grid-cols-4';
             return 'grid-cols-7';
+          };
+
+          // Database operations with real-time sync
+          const saveEmployeeToDb = async (employee) => {
+            try {
+              setPendingOperations(prev => prev + 1);
+              await dbApi.saveEmployee(employee);
+              addNotification(`Employee ${employee.name} saved`, 'success');
+            } catch (error) {
+              console.error('Failed to save employee:', error);
+              if (error.message.includes('Offline')) {
+                addNotification('Employee saved locally - will sync when online', 'info');
+              } else {
+                addNotification('Failed to save employee', 'error');
+              }
+            } finally {
+              setPendingOperations(prev => Math.max(0, prev - 1));
+            }
+          };
+
+          const deleteEmployeeFromDb = async (employeeId) => {
+            try {
+              setPendingOperations(prev => prev + 1);
+              await dbApi.deleteEmployee(employeeId);
+              addNotification('Employee deleted', 'success');
+            } catch (error) {
+              console.error('Failed to delete employee:', error);
+              if (error.message.includes('Offline')) {
+                addNotification('Delete queued - will sync when online', 'info');
+              } else {
+                addNotification('Failed to delete employee', 'error');
+              }
+            } finally {
+              setPendingOperations(prev => Math.max(0, prev - 1));
+            }
+          };
+
+          const deleteLeaveRequestFromDb = async (requestId) => {
+            try {
+              setPendingOperations(prev => prev + 1);
+              await dbApi.deleteLeaveRequest(requestId);
+              addNotification('Leave request cancelled', 'success');
+            } catch (error) {
+              console.error('Failed to delete leave request:', error);
+              if (error.message.includes('Offline')) {
+                addNotification('Cancellation queued - will sync when online', 'info');
+              } else {
+                addNotification('Failed to cancel leave request', 'error');
+              }
+            } finally {
+              setPendingOperations(prev => Math.max(0, prev - 1));
+            }
           };
 
           const renderCalendarContent = () => {
@@ -551,9 +891,9 @@
             setSelectedDate(null);
           };
 
-          const saveQuickLeave = () => {
+          const saveQuickLeave = async () => {
             if (!quickLeaveForm.employeeId || !selectedDate) {
-              alert('Please select an employee');
+              addNotification('Please select an employee', 'error');
               return;
             }
 
@@ -562,13 +902,13 @@
             const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
             
             if (!employee) {
-              alert('Please select a valid employee');
+              addNotification('Please select a valid employee', 'error');
               return;
             }
 
             const remainingLeave = employee.totalLeave - employee.usedLeave;
             if (totalHours > remainingLeave) {
-              alert(`Employee only has ${formatHours(remainingLeave)} remaining.`);
+              addNotification(`Employee only has ${formatHours(remainingLeave)} remaining.`, 'error');
               return;
             }
 
@@ -589,12 +929,23 @@
               hours: totalHours
             };
 
+            // Update local state immediately for responsiveness
             setLeaveRequests(prev => [...prev, newLeaveRequest]);
             setEmployees(prev => prev.map(emp => 
               emp.id === parseInt(quickLeaveForm.employeeId)
                 ? { ...emp, usedLeave: emp.usedLeave + totalHours }
                 : emp
             ));
+
+            // Save to database
+            await saveLeaveRequestToDb(newLeaveRequest);
+            
+            // Update employee in database
+            const updatedEmployee = {
+              ...employee,
+              usedLeave: employee.usedLeave + totalHours
+            };
+            await saveEmployeeToDb(updatedEmployee);
 
             closeQuickLeaveModal();
           };
@@ -627,9 +978,9 @@
             setEditingEmployee(null);
           };
 
-          const saveEmployee = () => {
+          const saveEmployee = async () => {
             if (!employeeForm.name.trim() || !employeeForm.department.trim()) {
-              alert('Please fill in all required fields');
+              addNotification('Please fill in all required fields', 'error');
               return;
             }
 
@@ -637,21 +988,25 @@
             const usedLeave = parseInt(employeeForm.usedLeave) || 0;
 
             if (editingEmployee) {
+              const updatedEmployee = {
+                ...editingEmployee,
+                name: employeeForm.name,
+                department: employeeForm.department,
+                totalLeave: totalLeave,
+                usedLeave: usedLeave,
+                color: employeeForm.color,
+                avatar: generateInitials(employeeForm.name)
+              };
+
+              // Update local state immediately
               setEmployees(prev => prev.map(emp => 
-                emp.id === editingEmployee.id 
-                  ? {
-                      ...emp,
-                      name: employeeForm.name,
-                      department: employeeForm.department,
-                      totalLeave: totalLeave,
-                      usedLeave: usedLeave,
-                      color: employeeForm.color,
-                      avatar: generateInitials(employeeForm.name)
-                    }
-                  : emp
+                emp.id === editingEmployee.id ? updatedEmployee : emp
               ));
+
+              // Save to database
+              await saveEmployeeToDb(updatedEmployee);
             } else {
-              const newId = Math.max(...employees.map(emp => emp.id)) + 1;
+              const newId = Math.max(...employees.map(emp => emp.id), 0) + 1;
               const newEmployee = {
                 id: newId,
                 name: employeeForm.name,
@@ -661,33 +1016,53 @@
                 avatar: generateInitials(employeeForm.name),
                 color: employeeForm.color
               };
+
+              // Update local state immediately
               setEmployees(prev => [...prev, newEmployee]);
+
+              // Save to database
+              await saveEmployeeToDb(newEmployee);
             }
             
             closeEmployeeModal();
           };
 
-          const deleteEmployee = (employeeId) => {
+          const deleteEmployee = async (employeeId) => {
             if (confirm('Are you sure you want to delete this employee?')) {
+              // Update local state immediately
               setEmployees(prev => prev.filter(emp => emp.id !== employeeId));
+              
+              // Delete from database
+              await deleteEmployeeFromDb(employeeId);
             }
           };
 
-          const cancelLeaveRequest = (leaveRequest) => {
+          const cancelLeaveRequest = async (leaveRequest) => {
             if (confirm(`Cancel leave request for ${employees.find(emp => emp.id === leaveRequest.employeeId)?.name}?`)) {
-              // Remove the leave request
+              // Update local state immediately
               setLeaveRequests(prev => prev.filter(req => req.id !== leaveRequest.id));
-              
-              // Return the hours back to the employee
               setEmployees(prev => prev.map(emp => 
                 emp.id === leaveRequest.employeeId
                   ? { ...emp, usedLeave: emp.usedLeave - leaveRequest.hours }
                   : emp
               ));
+
+              // Delete from database
+              await deleteLeaveRequestFromDb(leaveRequest.id);
+              
+              // Update employee in database
+              const employee = employees.find(emp => emp.id === leaveRequest.employeeId);
+              if (employee) {
+                const updatedEmployee = {
+                  ...employee,
+                  usedLeave: employee.usedLeave - leaveRequest.hours
+                };
+                await saveEmployeeToDb(updatedEmployee);
+              }
             }
           };
 
-          const cancelSingleDayLeave = (leaveRequest, specificDate) => {
+          const cancelSingleDayLeave = async (leaveRequest, specificDate) => {
             const employee = employees.find(emp => emp.id === leaveRequest.employeeId);
             if (confirm(`Cancel leave for ${employee?.name} on ${specificDate.toLocaleDateString()}?`)) {
               const leaveStart = new Date(leaveRequest.startDate);
@@ -696,12 +1071,7 @@
               
               // If it's a single day leave, just delete the whole request
               if (leaveStart.toDateString() === leaveEnd.toDateString()) {
-                setLeaveRequests(prev => prev.filter(req => req.id !== leaveRequest.id));
-                setEmployees(prev => prev.map(emp => 
-                  emp.id === leaveRequest.employeeId
-                    ? { ...emp, usedLeave: emp.usedLeave - leaveRequest.hours }
-                    : emp
-                ));
+                await cancelLeaveRequest(leaveRequest);
                 return;
               }
               
@@ -713,21 +1083,33 @@
                 const newStartDate = new Date(leaveStart);
                 newStartDate.setDate(leaveStart.getDate() + 1);
                 
+                const updatedRequest = {
+                  ...leaveRequest,
+                  startDate: newStartDate,
+                  hours: leaveRequest.hours - dailyHours
+                };
+
                 setLeaveRequests(prev => prev.map(req => 
-                  req.id === leaveRequest.id
-                    ? { ...req, startDate: newStartDate, hours: req.hours - dailyHours }
-                    : req
+                  req.id === leaveRequest.id ? updatedRequest : req
                 ));
+
+                await saveLeaveRequestToDb(updatedRequest);
               } else if (cancelDate.toDateString() === leaveEnd.toDateString()) {
                 // Canceling last day - move end date to previous day
                 const newEndDate = new Date(leaveEnd);
                 newEndDate.setDate(leaveEnd.getDate() - 1);
                 
+                const updatedRequest = {
+                  ...leaveRequest,
+                  endDate: newEndDate,
+                  hours: leaveRequest.hours - dailyHours
+                };
+
                 setLeaveRequests(prev => prev.map(req => 
-                  req.id === leaveRequest.id
-                    ? { ...req, endDate: newEndDate, hours: req.hours - dailyHours }
-                    : req
+                  req.id === leaveRequest.id ? updatedRequest : req
                 ));
+
+                await saveLeaveRequestToDb(updatedRequest);
               } else {
                 // Canceling middle day - split into two requests
                 const newEndDate1 = new Date(cancelDate);
@@ -742,33 +1124,93 @@
                 
                 const newId = Math.max(...leaveRequests.map(req => req.id)) + 1;
                 
+                const request1 = {
+                  ...leaveRequest,
+                  endDate: newEndDate1,
+                  hours: days1 * dailyHours
+                };
+
+                const request2 = {
+                  ...leaveRequest,
+                  id: newId,
+                  startDate: newStartDate2,
+                  hours: days2 * dailyHours
+                };
+
                 setLeaveRequests(prev => [
                   ...prev.filter(req => req.id !== leaveRequest.id),
-                  {
-                    ...leaveRequest,
-                    endDate: newEndDate1,
-                    hours: days1 * dailyHours
-                  },
-                  {
-                    ...leaveRequest,
-                    id: newId,
-                    startDate: newStartDate2,
-                    hours: days2 * dailyHours
-                  }
+                  request1,
+                  request2
                 ]);
+
+                await saveLeaveRequestToDb(request1);
+                await saveLeaveRequestToDb(request2);
               }
               
               // Return 8 hours back to the employee
+              const updatedEmployee = {
+                ...employee,
+                usedLeave: employee.usedLeave - dailyHours
+              };
+
               setEmployees(prev => prev.map(emp => 
-                emp.id === leaveRequest.employeeId
-                  ? { ...emp, usedLeave: emp.usedLeave - dailyHours }
-                  : emp
+                emp.id === leaveRequest.employeeId ? updatedEmployee : emp
               ));
+
+              await saveEmployeeToDb(updatedEmployee);
             }
           };
 
+          if (isLoading) {
+            return (
+              <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Loading calendar data...</p>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div className="min-h-screen bg-gray-50">
+              {/* Connection Status Indicator */}
+              <div className={`connection-indicator ${connectionStatus}`}>
+                {connectionStatus === 'connected' && (
+                  <>
+                    <Wifi className="h-4 w-4" />
+                    <span>Connected</span>
+                    {pendingOperations > 0 && (
+                      <>
+                        <Sync className="h-4 w-4 sync-indicator" />
+                        <span>{pendingOperations} syncing</span>
+                      </>
+                    )}
+                  </>
+                )}
+                {connectionStatus === 'disconnected' && (
+                  <>
+                    <WifiOff className="h-4 w-4" />
+                    <span>Offline</span>
+                    {dbApi.queue.length > 0 && (
+                      <span>({dbApi.queue.length} queued)</span>
+                    )}
+                  </>
+                )}
+                {connectionStatus === 'connecting' && (
+                  <>
+                    <Sync className="h-4 w-4 sync-indicator" />
+                    <span>Connecting...</span>
+                  </>
+                )}
+              </div>
+
+              {/* Notifications */}
+              <NotificationSystem 
+                notifications={notifications} 
+                removeNotification={removeNotification} 
+              />
+
               {/* Header */}
               <div className="bg-white shadow-sm border-b">
                 <div className="max-w-7xl mx-auto px-6 py-4">
@@ -778,6 +1220,11 @@
                         <Calendar className="h-8 w-8" style={{ color: companyBranding.primaryColor }} />
                         <h1 className="text-2xl font-bold text-gray-900">{companyBranding.companyName} Leave Calendar</h1>
                       </div>
+                      {lastSyncTime && (
+                        <div className="text-sm text-gray-500">
+                          Last sync: {lastSyncTime.toLocaleTimeString()}
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex items-center space-x-4">
@@ -945,56 +1392,6 @@
                           value={employeeForm.name}
                           onChange={(e) => setEmployeeForm(prev => ({...prev, name: e.target.value}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="e.g., John Smith"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Department *
-                        </label>
-                        <select
-                          value={employeeForm.department}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, department: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="">Select Department</option>
-                          <option value="Workshop">Workshop</option>
-                          <option value="Finishing">Finishing</option>
-                          <option value="Administration">Administration</option>
-                          <option value="Sales">Sales</option>
-                          <option value="Quality Control">Quality Control</option>
-                          <option value="Design">Design</option>
-                          <option value="Maintenance">Maintenance</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Annual Leave Allocation (hours)
-                        </label>
-                        <input
-                          type="number"
-                          value={employeeForm.totalLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          min="0"
-                          max="400"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Standard: 160 hours (20 days), Senior: 200 hours (25 days)
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Leave Used (hours)
-                        </label>
-                        <input
-                          type="number"
-                          value={employeeForm.usedLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                         />
                         <p className="text-xs text-gray-500 mt-1">
@@ -1140,4 +1537,71 @@
         ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
     </script>
 </body>
-</html>
+</html>blue-500 focus:border-transparent"
+                          placeholder="e.g., John Smith"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Department *
+                        </label>
+                        <select
+                          value={employeeForm.department}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, department: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Department</option>
+                          <option value="Workshop">Workshop</option>
+                          <option value="Finishing">Finishing</option>
+                          <option value="Administration">Administration</option>
+                          <option value="Sales">Sales</option>
+                          <option value="Quality Control">Quality Control</option>
+                          <option value="Design">Design</option>
+                          <option value="Maintenance">Maintenance</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Annual Leave Allocation (hours)
+                        </label>
+                        <input
+                          type="number"
+                          value={employeeForm.totalLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          min="0"
+                          max="400"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Standard: 160 hours (20 days), Senior: 200 hours (25 days)
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leave Used (hours)
+                        </label>
+                        <input
+                          type="number"
+                          value={employeeForm.usedLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-prev => Math.max(0, prev - 1));
+            }
+          };
+
+          const saveLeaveRequestToDb = async (request) => {
+            try {
+              setPendingOperations(prev => prev + 1);
+              await dbApi.saveLeaveRequest(request);
+              addNotification('Leave request saved', 'success');
+            } catch (error) {
+              console.error('Failed to save leave request:', error);
+              if (error.message.includes('Offline')) {
+                addNotification('Leave saved locally - will sync when online', 'info');
+              } else {
+                addNotification('Failed to save leave request', 'error');
+              }
+            } finally {
+              setPendingOperations(

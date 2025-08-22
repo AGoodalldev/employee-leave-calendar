@@ -491,214 +491,148 @@
 
             // Main Content - Calendar View
             currentView === 'calendar' && React.createElement('div', {className: "max-w-7xl mx-auto px-6 py-8"},
-              React.createElement('div', {className: "grid grid-cols-1 lg:grid-cols-4 gap-8"},
-                // Employee Sidebar
-                React.createElement('div', {className: "lg:col-span-1"},
-                  React.createElement('div', {className: "bg-white rounded-xl shadow-sm border p-6"},
-                    React.createElement('h2', {className: "text-lg font-semibold text-gray-900 mb-6"}, "Team Overview"),
-                    React.createElement('div', {className: "space-y-4"},
-                      ...employees.map(employee => {
-                        const remainingHours = employee.totalLeave - employee.usedLeave;
-                        const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100;
+              React.createElement('div', {className: "bg-white rounded-xl shadow-sm border"},
+                React.createElement('div', {className: "flex items-center justify-between p-6 border-b"},
+                  React.createElement('div', {className: "flex items-center space-x-4"},
+                    React.createElement('button', {
+                      onClick: () => navigateCalendar(-1),
+                      className: "p-2 hover:bg-gray-100 rounded-lg"
+                    }, "←"),
+                    
+                    React.createElement('h2', {className: "text-xl font-semibold text-gray-900"}, getViewTitle()),
+                    
+                    React.createElement('button', {
+                      onClick: () => navigateCalendar(1),
+                      className: "p-2 hover:bg-gray-100 rounded-lg"
+                    }, "→")
+                  )
+                ),
+
+                React.createElement('div', {className: "p-6"},
+                  viewMode === 'year' ? (
+                    React.createElement('div', {className: getGridColumns() + " grid gap-4"},
+                      ...days.map((month, index) => {
+                        const monthLeaves = leaveRequests.filter(leave => {
+                          const leaveStart = new Date(leave.startDate);
+                          return leaveStart.getMonth() === month.getMonth() && leaveStart.getFullYear() === month.getFullYear();
+                        });
+                        
+                        // Group leaves by employee to show only one entry per employee per month
+                        const employeeMap = new Map();
+                        monthLeaves.forEach(leave => {
+                          const employeeId = leave.employeeId;
+                          if (employeeMap.has(employeeId)) {
+                            const existing = employeeMap.get(employeeId);
+                            existing.totalDays += (leave.hours / 8);
+                          } else {
+                            employeeMap.set(employeeId, {
+                              employeeId: employeeId,
+                              status: leave.status,
+                              totalDays: (leave.hours / 8)
+                            });
+                          }
+                        });
+                        
+                        const uniqueEmployeeLeaves = Array.from(employeeMap.values());
                         
                         return React.createElement('div', {
-                          key: employee.id,
-                          className: "p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow relative group"
+                          key: index,
+                          className: "border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer",
+                          onClick: () => {
+                            setCurrentDate(month);
+                            setViewMode('month');
+                          }
                         },
-                          React.createElement('div', {className: "absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity"},
-                            React.createElement('button', {
-                              onClick: () => openEmployeeModal(employee),
-                              className: "p-1 text-gray-400 hover:text-blue-600"
-                            }, React.createElement(Icon, {name: "edit", className: "h-4 w-4"})),
-                            
-                            React.createElement('button', {
-                              onClick: () => deleteEmployee(employee.id),
-                              className: "p-1 text-gray-400 hover:text-red-600"
-                            }, React.createElement(Icon, {name: "trash", className: "h-4 w-4"}))
-                          ),
-                          
-                          React.createElement('div', {className: "flex items-center space-x-3 mb-3"},
-                            React.createElement('div', {
-                              className: "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium",
-                              style: { backgroundColor: employee.color }
-                            }, employee.avatar),
-                            
-                            React.createElement('div', {className: "flex-1"},
-                              React.createElement('h3', {className: "font-medium text-gray-900"}, employee.name),
-                              React.createElement('p', {className: "text-sm text-gray-500"}, employee.department)
-                            )
-                          ),
-                          
-                          React.createElement('div', {className: "space-y-2"},
-                            React.createElement('div', {className: "flex justify-between text-sm"},
-                              React.createElement('span', {className: "text-gray-600"}, "Used:"),
-                              React.createElement('span', {className: "font-medium"}, formatHours(employee.usedLeave))
-                            ),
-                            React.createElement('div', {className: "flex justify-between text-sm"},
-                              React.createElement('span', {className: "text-gray-600"}, "Remaining:"),
-                              React.createElement('span', {className: "font-medium text-green-600"}, formatHours(remainingHours))
-                            ),
-                            
-                            React.createElement('div', {className: "w-full bg-gray-200 rounded-full h-2 mt-2"},
-                              React.createElement('div', {
-                                className: "h-2 rounded-full transition-all duration-300",
-                                style: { width: `${usagePercentage}%`, backgroundColor: employee.color }
-                              })
-                            ),
-                            React.createElement('div', {className: "text-xs text-gray-500 text-center"}, `${usagePercentage.toFixed(1)}% used`)
+                          React.createElement('h3', {className: "font-medium text-gray-900 mb-2"}, monthNames[month.getMonth()]),
+                          React.createElement('div', {className: "space-y-1"},
+                            ...uniqueEmployeeLeaves.slice(0, 3).map(employeeLeave => {
+                              const employee = employees.find(emp => emp.id === employeeLeave.employeeId);
+                              if (!employee) return null;
+                              
+                              return React.createElement('div', {
+                                key: `${employeeLeave.employeeId}-${month.getMonth()}-${month.getFullYear()}`,
+                                className: `text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(employeeLeave.status)}`
+                              },
+                                React.createElement('span', {className: "truncate"}, employee.name.split(' ')[0]),
+                                React.createElement('span', {className: "text-xs ml-2"}, `${employeeLeave.totalDays}d`)
+                              );
+                            }),
+                            uniqueEmployeeLeaves.length > 3 && React.createElement('div', {className: "text-xs text-gray-500"}, `+${uniqueEmployeeLeaves.length - 3} more`)
                           )
                         );
                       })
                     )
-                  )
-                ),
-
-                // Calendar
-                React.createElement('div', {className: "lg:col-span-3"},
-                  React.createElement('div', {className: "bg-white rounded-xl shadow-sm border"},
-                    React.createElement('div', {className: "flex items-center justify-between p-6 border-b"},
-                      React.createElement('div', {className: "flex items-center space-x-4"},
-                        React.createElement('button', {
-                          onClick: () => navigateCalendar(-1),
-                          className: "p-2 hover:bg-gray-100 rounded-lg"
-                        }, "←"),
-                        
-                        React.createElement('h2', {className: "text-xl font-semibold text-gray-900"}, getViewTitle()),
-                        
-                        React.createElement('button', {
-                          onClick: () => navigateCalendar(1),
-                          className: "p-2 hover:bg-gray-100 rounded-lg"
-                        }, "→")
-                      )
-                    ),
-
-                    React.createElement('div', {className: "p-6"},
-                      viewMode === 'year' ? (
-                        React.createElement('div', {className: getGridColumns() + " grid gap-4"},
-                          ...days.map((month, index) => {
-                            const monthLeaves = leaveRequests.filter(leave => {
-                              const leaveStart = new Date(leave.startDate);
-                              return leaveStart.getMonth() === month.getMonth() && leaveStart.getFullYear() === month.getFullYear();
-                            });
-                            
-                            // Group leaves by employee to show only one entry per employee per month
-                            const employeeMap = new Map();
-                            monthLeaves.forEach(leave => {
-                              const employeeId = leave.employeeId;
-                              if (employeeMap.has(employeeId)) {
-                                const existing = employeeMap.get(employeeId);
-                                existing.totalDays += (leave.hours / 8);
-                              } else {
-                                employeeMap.set(employeeId, {
-                                  employeeId: employeeId,
-                                  status: leave.status,
-                                  totalDays: (leave.hours / 8)
-                                });
-                              }
-                            });
-                            
-                            const uniqueEmployeeLeaves = Array.from(employeeMap.values());
-                            
-                            return React.createElement('div', {
-                              key: index,
-                              className: "border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer",
-                              onClick: () => {
-                                setCurrentDate(month);
-                                setViewMode('month');
-                              }
-                            },
-                              React.createElement('h3', {className: "font-medium text-gray-900 mb-2"}, monthNames[month.getMonth()]),
-                              React.createElement('div', {className: "space-y-1"},
-                                ...uniqueEmployeeLeaves.slice(0, 3).map(employeeLeave => {
-                                  const employee = employees.find(emp => emp.id === employeeLeave.employeeId);
-                                  if (!employee) return null;
-                                  
-                                  return React.createElement('div', {
-                                    key: `${employeeLeave.employeeId}-${month.getMonth()}-${month.getFullYear()}`,
-                                    className: `text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(employeeLeave.status)}`
-                                  },
-                                    React.createElement('span', {className: "truncate"}, employee.name.split(' ')[0]),
-                                    React.createElement('span', {className: "text-xs ml-2"}, `${employeeLeave.totalDays}d`)
-                                  );
-                                }),
-                                uniqueEmployeeLeaves.length > 3 && React.createElement('div', {className: "text-xs text-gray-500"}, `+${uniqueEmployeeLeaves.length - 3} more`)
-                              )
-                            );
-                          })
+                  ) : (
+                    React.createElement('div', null,
+                      React.createElement('div', {className: getGridColumns() + " grid gap-1 mb-2"},
+                        ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day =>
+                          React.createElement('div', {key: day, className: "p-3 text-center text-sm font-medium text-gray-500"}, day)
                         )
-                      ) : (
-                        React.createElement('div', null,
-                          React.createElement('div', {className: getGridColumns() + " grid gap-1 mb-2"},
-                            ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day =>
-                              React.createElement('div', {key: day, className: "p-3 text-center text-sm font-medium text-gray-500"}, day)
-                            )
-                          ),
+                      ),
+                      
+                      React.createElement('div', {className: getGridColumns() + " grid gap-1"},
+                        ...days.map((date, index) => {
+                          const isCurrentMonth = viewMode === 'week' || date.getMonth() === currentDate.getMonth();
+                          const isToday = date.toDateString() === new Date().toDateString();
+                          const dayLeaves = getLeaveForDate(date);
                           
-                          React.createElement('div', {className: getGridColumns() + " grid gap-1"},
-                            ...days.map((date, index) => {
-                              const isCurrentMonth = viewMode === 'week' || date.getMonth() === currentDate.getMonth();
-                              const isToday = date.toDateString() === new Date().toDateString();
-                              const dayLeaves = getLeaveForDate(date);
+                          return React.createElement('div', {
+                            key: index,
+                            className: `${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
+                              !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
+                            } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`
+                          },
+                            React.createElement('div', {className: "flex justify-between items-start mb-1"},
+                              React.createElement('div', {
+                                className: `text-sm font-medium ${
+                                  isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                                }`
+                              }, viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()),
                               
-                              return React.createElement('div', {
-                                key: index,
-                                className: `${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                  !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                                } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`
-                              },
-                                React.createElement('div', {className: "flex justify-between items-start mb-1"},
-                                  React.createElement('div', {
-                                    className: `text-sm font-medium ${
-                                      isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                                    }`
-                                  }, viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()),
-                                  
-                                  isCurrentMonth && React.createElement('span', {
-                                    onClick: () => {
-                                      setSelectedDate(date);
-                                      setQuickLeaveForm({
-                                        employeeId: employees.length > 0 ? employees[0].id.toString() : '1',
-                                        days: 1,
-                                        type: 'Annual Leave'
-                                      });
-                                      setShowQuickLeaveModal(true);
-                                    },
-                                    className: "opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer"
-                                  }, "+")
-                                ),
+                              isCurrentMonth && React.createElement('span', {
+                                onClick: () => {
+                                  setSelectedDate(date);
+                                  setQuickLeaveForm({
+                                    employeeId: employees.length > 0 ? employees[0].id.toString() : '1',
+                                    days: 1,
+                                    type: 'Annual Leave'
+                                  });
+                                  setShowQuickLeaveModal(true);
+                                },
+                                className: "opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer"
+                              }, "+")
+                            ),
+                            
+                            React.createElement('div', {className: "space-y-1"},
+                              ...dayLeaves.map(leave => {
+                                const employee = employees.find(emp => emp.id === leave.employeeId);
+                                if (!employee) return null;
                                 
-                                React.createElement('div', {className: "space-y-1"},
-                                  ...dayLeaves.map(leave => {
-                                    const employee = employees.find(emp => emp.id === leave.employeeId);
-                                    if (!employee) return null;
-                                    
-                                    return React.createElement('div', {
-                                      key: leave.id,
-                                      className: `text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`,
-                                      title: `${employee.name} - ${leave.type}`
+                                return React.createElement('div', {
+                                  key: leave.id,
+                                  className: `text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`,
+                                  title: `${employee.name} - ${leave.type}`
+                                },
+                                  React.createElement('span', {className: "truncate flex-1"}, employee.name.split(' ')[0]),
+                                  React.createElement('button', {
+                                    onClick: () => {
+                                      if (confirm(`Cancel leave for ${employee?.name}?`)) {
+                                        setLeaveRequests(prev => prev.filter(req => req.id !== leave.id));
+                                        setEmployees(prev => prev.map(emp => 
+                                          emp.id === leave.employeeId 
+                                            ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
+                                            : emp
+                                        ));
+                                        syncData();
+                                      }
                                     },
-                                      React.createElement('span', {className: "truncate flex-1"}, employee.name.split(' ')[0]),
-                                      React.createElement('button', {
-                                        onClick: () => {
-                                          if (confirm(`Cancel leave for ${employee?.name}?`)) {
-                                            setLeaveRequests(prev => prev.filter(req => req.id !== leave.id));
-                                            setEmployees(prev => prev.map(emp => 
-                                              emp.id === leave.employeeId 
-                                                ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
-                                                : emp
-                                            ));
-                                            syncData();
-                                          }
-                                        },
-                                        className: "opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded"
-                                      }, React.createElement(Icon, {name: "x", className: "h-2 w-2"}))
-                                    );
-                                  })
-                                )
-                              );
-                            })
-                          )
-                        )
+                                    className: "opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded"
+                                  }, React.createElement(Icon, {name: "x", className: "h-2 w-2"}))
+                                );
+                              })
+                            )
+                          );
+                        })
                       )
                     )
                   )

@@ -283,8 +283,8 @@
               setEmployeeForm({
                 name: employee.name,
                 department: employee.department,
-                totalLeave: safeNumber(employee.totalLeave),
-                usedLeave: safeNumber(employee.usedLeave),
+                totalLeave: parseInt(employee.totalLeave) || 0,
+                usedLeave: parseInt(employee.usedLeave) || 0,
                 color: employee.color
               });
             } else {
@@ -325,8 +325,8 @@
                       ...emp,
                       name: employeeForm.name,
                       department: employeeForm.department,
-                      totalLeave: safeNumber(employeeForm.totalLeave),
-                      usedLeave: safeNumber(employeeForm.usedLeave),
+                      totalLeave: parseInt(employeeForm.totalLeave) || 0,
+                      usedLeave: parseInt(employeeForm.usedLeave) || 0,
                       color: employeeForm.color,
                       avatar: generateInitials(employeeForm.name)
                     }
@@ -338,8 +338,8 @@
                 id: newId,
                 name: employeeForm.name,
                 department: employeeForm.department,
-                totalLeave: safeNumber(employeeForm.totalLeave),
-                usedLeave: safeNumber(employeeForm.usedLeave),
+                totalLeave: parseInt(employeeForm.totalLeave) || 0,
+                usedLeave: parseInt(employeeForm.usedLeave) || 0,
                 avatar: generateInitials(employeeForm.name),
                 color: employeeForm.color
               };
@@ -713,10 +713,12 @@
                         </label>
                         <input
                           type="number"
-                          value={employeeForm.totalLeave}
+                          value={employeeForm.totalLeave || ''}
                           onChange={(e) => {
-                            const value = safeNumber(e.target.value);
-                            setEmployeeForm(prev => ({...prev, totalLeave: value}));
+                            const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                            if (!isNaN(value) && value >= 0) {
+                              setEmployeeForm(prev => ({...prev, totalLeave: value}));
+                            }
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
@@ -733,18 +735,20 @@
                         </label>
                         <input
                           type="number"
-                          value={employeeForm.usedLeave}
+                          value={employeeForm.usedLeave || ''}
                           onChange={(e) => {
-                            const value = safeNumber(e.target.value);
-                            const maxValue = safeNumber(employeeForm.totalLeave);
-                            setEmployeeForm(prev => ({...prev, usedLeave: Math.min(value, maxValue)}));
+                            const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                            const maxValue = employeeForm.totalLeave || 0;
+                            if (!isNaN(value) && value >= 0) {
+                              setEmployeeForm(prev => ({...prev, usedLeave: Math.min(value, maxValue)}));
+                            }
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
-                          max={employeeForm.totalLeave}
+                          max={employeeForm.totalLeave || 0}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Remaining: {formatHours(safeNumber(employeeForm.totalLeave) - safeNumber(employeeForm.usedLeave))}
+                          Remaining: {formatHours((employeeForm.totalLeave || 0) - (employeeForm.usedLeave || 0))}
                         </p>
                       </div>
                       

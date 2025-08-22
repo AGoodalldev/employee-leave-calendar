@@ -106,6 +106,7 @@
           const [selectedEmployee, setSelectedEmployee] = useState('all');
           const [showSettings, setShowSettings] = useState(false);
           const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+          const [showLeaveModal, setShowLeaveModal] = useState(false);
           const [editingEmployee, setEditingEmployee] = useState(null);
           const [searchTerm, setSearchTerm] = useState('');
           
@@ -148,7 +149,7 @@
             }
           ]);
 
-          const [leaveRequests] = useState([
+          const [leaveRequests, setLeaveRequests] = useState([
             {
               id: 1,
               employeeId: 1,
@@ -190,6 +191,17 @@
             totalLeave: 160,
             usedLeave: 0,
             color: '#3B82F6'
+          });
+
+          const [leaveForm, setLeaveForm] = useState({
+            employeeId: '',
+            startDate: '',
+            endDate: '',
+            type: 'Annual Leave',
+            timeEntry: 'days', // 'days' or 'hours'
+            days: 1,
+            hours: 8,
+            notes: ''
           });
 
           // Predefined colors for employees
@@ -502,6 +514,113 @@
             }
           };
 
+          // Leave Management Functions
+          const openLeaveModal = () => {
+            // Set default start date to today
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            
+            setLeaveForm({
+              employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+              startDate: today.toISOString().split('T')[0],
+              endDate: tomorrow.toISOString().split('T')[0],
+              type: 'Annual Leave',
+              timeEntry: 'days',
+              days: 1,
+              hours: 8,
+              notes: ''
+            });
+            setShowLeaveModal(true);
+          };
+
+          const closeLeaveModal = () => {
+            setShowLeaveModal(false);
+            setLeaveForm({
+              employeeId: '',
+              startDate: '',
+              endDate: '',
+              type: 'Annual Leave',
+              timeEntry: 'days',
+              days: 1,
+              hours: 8,
+              notes: ''
+            });
+          };
+
+          const calculateLeaveDays = () => {
+            if (!leaveForm.startDate || !leaveForm.endDate) return 0;
+            
+            const start = new Date(leaveForm.startDate);
+            const end = new Date(leaveForm.endDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end date
+            return diffDays;
+          };
+
+          const calculateLeaveHours = () => {
+            if (leaveForm.timeEntry === 'hours') {
+              return parseInt(leaveForm.hours) || 0;
+            } else {
+              const days = calculateLeaveDays();
+              return days * 8; // 8 hours per day
+            }
+          };
+
+          const saveLeaveRequest = () => {
+            if (!leaveForm.employeeId || !leaveForm.startDate || !leaveForm.endDate) {
+              alert('Please fill in all required fields');
+              return;
+            }
+
+            const startDate = new Date(leaveForm.startDate);
+            const endDate = new Date(leaveForm.endDate);
+            
+            if (endDate < startDate) {
+              alert('End date cannot be before start date');
+              return;
+            }
+
+            const totalHours = calculateLeaveHours();
+            const employee = employees.find(emp => emp.id === parseInt(leaveForm.employeeId));
+            
+            if (!employee) {
+              alert('Please select a valid employee');
+              return;
+            }
+
+            // Check if employee has enough leave remaining
+            const remainingLeave = employee.totalLeave - employee.usedLeave;
+            if (totalHours > remainingLeave) {
+              alert(`Employee only has ${formatHours(remainingLeave)} remaining. This request requires ${formatHours(totalHours)}.`);
+              return;
+            }
+
+            // Create new leave request
+            const newLeaveRequest = {
+              id: Math.max(...leaveRequests.map(req => req.id), 0) + 1,
+              employeeId: parseInt(leaveForm.employeeId),
+              startDate: startDate,
+              endDate: endDate,
+              type: leaveForm.type,
+              status: 'pending',
+              hours: totalHours,
+              notes: leaveForm.notes
+            };
+
+            // Add leave request
+            setLeaveRequests(prev => [...prev, newLeaveRequest]);
+
+            // Update employee's used leave
+            setEmployees(prev => prev.map(emp => 
+              emp.id === parseInt(leaveForm.employeeId)
+                ? { ...emp, usedLeave: emp.usedLeave + totalHours }
+                : emp
+            ));
+
+            closeLeaveModal();
+          };
+
           return (
             <div className="min-h-screen bg-gray-50">
               <div className="bg-white shadow-sm border-b">
@@ -561,7 +680,10 @@
                         <span>Add Employee</span>
                       </button>
                       
-                      <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                      <button 
+                        onClick={openLeaveModal}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
                         <Plus className="h-4 w-4" />
                         <span>Add Leave</span>
                       </button>
@@ -737,6 +859,201 @@
                   </div>
                 </div>
               </div>
+
+              {/* Leave Request Modal */}
+              {showLeaveModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Add Leave Request</h3>
+                      <button 
+                        onClick={closeLeaveModal}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Employee *
+                        </label>
+                        <select
+                          value={leaveForm.employeeId}
+                          onChange={(e) => setLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Employee</option>
+                          {employees.map(emp => {
+                            const remaining = emp.totalLeave - emp.usedLeave;
+                            return (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name} - {formatHours(remaining)} remaining
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Start Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={leaveForm.startDate}
+                            onChange={(e) => setLeaveForm(prev => ({...prev, startDate: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            End Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={leaveForm.endDate}
+                            onChange={(e) => setLeaveForm(prev => ({...prev, endDate: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leave Type
+                        </label>
+                        <select
+                          value={leaveForm.type}
+                          onChange={(e) => setLeaveForm(prev => ({...prev, type: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="Annual Leave">Annual Leave</option>
+                          <option value="Sick Leave">Sick Leave</option>
+                          <option value="Personal Leave">Personal Leave</option>
+                          <option value="Maternity Leave">Maternity Leave</option>
+                          <option value="Paternity Leave">Paternity Leave</option>
+                          <option value="Study Leave">Study Leave</option>
+                          <option value="Compassionate Leave">Compassionate Leave</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Time Entry Method
+                        </label>
+                        <div className="flex bg-gray-100 rounded-lg p-1">
+                          <button
+                            type="button"
+                            onClick={() => setLeaveForm(prev => ({...prev, timeEntry: 'days'}))}
+                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              leaveForm.timeEntry === 'days' 
+                                ? 'bg-white text-gray-900 shadow-sm' 
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Days (Auto-calculate)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLeaveForm(prev => ({...prev, timeEntry: 'hours'}))}
+                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              leaveForm.timeEntry === 'hours' 
+                                ? 'bg-white text-gray-900 shadow-sm' 
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Manual Hours
+                          </button>
+                        </div>
+                      </div>
+
+                      {leaveForm.timeEntry === 'hours' ? (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Total Hours
+                          </label>
+                          <input
+                            type="number"
+                            value={leaveForm.hours}
+                            onChange={(e) => setLeaveForm(prev => ({...prev, hours: e.target.value}))}
+                            min="0.5"
+                            step="0.5"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      ) : (
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <div className="text-sm text-blue-800">
+                            <strong>Calculated Leave:</strong>
+                            <div className="mt-1">
+                              Days: {calculateLeaveDays()} • Hours: {calculateLeaveHours()} 
+                              {leaveForm.startDate && leaveForm.endDate && (
+                                <span className="block text-xs text-blue-600 mt-1">
+                                  From {new Date(leaveForm.startDate).toLocaleDateString()} to {new Date(leaveForm.endDate).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Notes (Optional)
+                        </label>
+                        <textarea
+                          value={leaveForm.notes}
+                          onChange={(e) => setLeaveForm(prev => ({...prev, notes: e.target.value}))}
+                          rows="3"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Additional notes or comments..."
+                        />
+                      </div>
+
+                      {leaveForm.employeeId && (
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="text-sm text-gray-700">
+                            <strong>Employee Leave Balance:</strong>
+                            {(() => {
+                              const emp = employees.find(e => e.id === parseInt(leaveForm.employeeId));
+                              if (!emp) return null;
+                              const remaining = emp.totalLeave - emp.usedLeave;
+                              const afterLeave = remaining - calculateLeaveHours();
+                              return (
+                                <div className="mt-1">
+                                  Current: {formatHours(remaining)} • After this request: {formatHours(afterLeave)}
+                                  {afterLeave < 0 && (
+                                    <div className="text-red-600 text-xs mt-1">⚠️ This request exceeds available leave</div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="flex justify-end space-x-3 pt-4">
+                        <button 
+                          onClick={closeLeaveModal}
+                          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={saveLeaveRequest}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Add Leave Request
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Employee Modal */}
               {showEmployeeModal && (

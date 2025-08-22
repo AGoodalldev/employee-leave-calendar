@@ -59,6 +59,12 @@
             </svg>
         );
 
+        const X = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        );
+
         const LeaveCalendar = () => {
           const [currentDate, setCurrentDate] = useState(new Date());
           const [viewMode, setViewMode] = useState('month');
@@ -280,8 +286,18 @@
                             const employee = employees.find(emp => emp.id === leave.employeeId);
                             if (!employee) return null;
                             return (
-                              <div key={leave.id} className={`text-xs px-2 py-1 rounded ${getStatusColor(leave.status)}`}>
-                                {employee.name.split(' ')[0]}
+                              <div key={leave.id} className={`text-xs px-2 py-1 rounded flex items-center justify-between group ${getStatusColor(leave.status)}`}>
+                                <span className="truncate">{employee.name.split(' ')[0]}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelLeaveRequest(leave);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded transition-all"
+                                  title="Cancel leave"
+                                >
+                                  <X className="h-2 w-2" />
+                                </button>
                               </div>
                             );
                           })}
@@ -345,10 +361,20 @@
                               return (
                                 <div
                                   key={`${leave.id}-${date.getTime()}`}
-                                  className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`}
+                                  className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`}
                                   title={`${employee.name} - ${leave.type}`}
                                 >
-                                  {employee.name.split(' ')[0]}
+                                  <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      cancelLeaveRequest(leave);
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded transition-all flex-shrink-0"
+                                    title="Cancel leave"
+                                  >
+                                    <X className="h-2 w-2" />
+                                  </button>
                                 </div>
                               );
                             })}
@@ -496,6 +522,20 @@
           const deleteEmployee = (employeeId) => {
             if (confirm('Are you sure you want to delete this employee?')) {
               setEmployees(prev => prev.filter(emp => emp.id !== employeeId));
+            }
+          };
+
+          const cancelLeaveRequest = (leaveRequest) => {
+            if (confirm(`Cancel leave request for ${employees.find(emp => emp.id === leaveRequest.employeeId)?.name}?`)) {
+              // Remove the leave request
+              setLeaveRequests(prev => prev.filter(req => req.id !== leaveRequest.id));
+              
+              // Return the hours back to the employee
+              setEmployees(prev => prev.map(emp => 
+                emp.id === leaveRequest.employeeId
+                  ? { ...emp, usedLeave: emp.usedLeave - leaveRequest.hours }
+                  : emp
+              ));
             }
           };
 

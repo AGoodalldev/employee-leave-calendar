@@ -1,4 +1,360 @@
-<!DOCTYPE html>
+React.createElement('button', {
+                        onClick: saveWorkshopShutdown,
+                        className: "w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      }, "Add Workshop Shutdown")
+                    )
+                  ),
+                  
+                  // Existing Workshop Shutdowns
+                  React.createElement('div', null,
+                    React.createElement('h3', {className: "text-lg font-semibold text-gray-900 mb-4"}, "Existing Workshop Shutdowns"),
+                    
+                    React.createElement('div', {className: "space-y-3"},
+                      workshopShutdowns.length === 0 ? (
+                        React.createElement('p', {className: "text-gray-500 text-sm italic"}, "No workshop shutdowns scheduled")
+                      ) : (
+                        workshopShutdowns.map(shutdown =>
+                          React.createElement('div', {
+                            key: shutdown.id,
+                            className: "border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group"
+                          },
+                            React.createElement('div', {className: "absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"},
+                              React.createElement('button', {
+                                onClick: () => deleteWorkshopShutdown(shutdown.id),
+                                className: "p-1 text-gray-400 hover:text-red-600 transition-colors"
+                              }, React.createElement(Icon, {name: "trash", className: "h-4 w-4"}))
+                            ),
+                            
+                            React.createElement('div', {className: "pr-8"},
+                              React.createElement('h4', {className: "font-medium text-gray-900"}, shutdown.name),
+                              React.createElement('p', {className: "text-sm text-gray-600 mt-1"}, 
+                                `${shutdown.startDate.toLocaleDateString()} - ${shutdown.endDate.toLocaleDateString()}`
+                              ),
+                              shutdown.description && React.createElement('p', {className: "text-sm text-gray-500 mt-2"}, shutdown.description)
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            ),
+
+            // Team Members View (existing code continues...)
+            currentView === 'team' && React.createElement('div', {className: "max-w-4xl mx-auto px-6 py-8"},
+              React.createElement('div', {className: "bg-white rounded-xl shadow-sm border p-6"},
+                React.createElement('div', {className: "flex items-center justify-between mb-6"},
+                  React.createElement('h2', {className: "text-2xl font-bold text-gray-900"}, "Team Members"),
+                  React.createElement('button', {
+                    onClick: () => openEmployeeModal(),
+                    className: "flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  },
+                    React.createElement(Icon, {name: "userAdd", className: "h-4 w-4"}),
+                    React.createElement('span', null, "Add Employee")
+                  )
+                ),
+                
+                React.createElement('div', {className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"},
+                  ...employees.map(employee => {
+                    const remainingHours = employee.totalLeave - employee.usedLeave;
+                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100;
+                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
+                    
+                    return React.createElement('div', {
+                      key: employee.id,
+                      className: "bg-gray-50 rounded-lg p-6 hover:shadow-md transition-shadow relative group"
+                    },
+                      React.createElement('div', {className: "absolute top-4 right-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity"},
+                        React.createElement('button', {
+                          onClick: () => openEmployeeModal(employee),
+                          className: "p-2 text-gray-400 hover:text-blue-600 bg-white rounded-lg shadow-sm"
+                        }, React.createElement(Icon, {name: "edit", className: "h-4 w-4"})),
+                        
+                        React.createElement('button', {
+                          onClick: () => deleteEmployee(employee.id),
+                          className: "p-2 text-gray-400 hover:text-red-600 bg-white rounded-lg shadow-sm"
+                        }, React.createElement(Icon, {name: "trash", className: "h-4 w-4"}))
+                      ),
+                      
+                      React.createElement('div', {className: "flex items-center space-x-4 mb-4"},
+                        React.createElement('div', {
+                          className: "w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg",
+                          style: { backgroundColor: employee.color }
+                        }, employee.avatar),
+                        
+                        React.createElement('div', {className: "flex-1"},
+                          React.createElement('h3', {className: "text-lg font-semibold text-gray-900"}, employee.name),
+                          React.createElement('p', {className: "text-gray-600"}, employee.department)
+                        )
+                      ),
+                      
+                      React.createElement('div', {className: "space-y-3"},
+                        React.createElement('div', {className: "grid grid-cols-2 gap-4 text-sm"},
+                          React.createElement('div', null,
+                            React.createElement('span', {className: "text-gray-600"}, "Total:"),
+                            React.createElement('p', {className: "font-medium"}, formatHours(employee.totalLeave))
+                          ),
+                          React.createElement('div', null,
+                            React.createElement('span', {className: "text-gray-600"}, "Used:"),
+                            React.createElement('p', {className: "font-medium"}, formatHours(employee.usedLeave))
+                          ),
+                          React.createElement('div', null,
+                            React.createElement('span', {className: "text-gray-600"}, "Remaining:"),
+                            React.createElement('p', {className: "font-medium text-green-600"}, formatHours(remainingHours))
+                          ),
+                          React.createElement('div', null,
+                            React.createElement('span', {className: "text-gray-600"}, "Usage:"),
+                            React.createElement('p', {className: "font-medium"}, `${usagePercentage.toFixed(1)}%`)
+                          )
+                        ),
+                        
+                        React.createElement('div', {className: "w-full bg-gray-200 rounded-full h-3"},
+                          React.createElement('div', {
+                            className: "h-3 rounded-full transition-all duration-300",
+                            style: { width: `${usagePercentage}%`, backgroundColor: employee.color }
+                          })
+                        ),
+                        
+                        recentLeaves.length > 0 && React.createElement('div', {className: "mt-4"},
+                          React.createElement('h4', {className: "text-sm font-medium text-gray-700 mb-2"}, "Recent Leave"),
+                          React.createElement('div', {className: "space-y-1"},
+                            ...recentLeaves.map(leave =>
+                              React.createElement('div', {key: leave.id, className: "flex justify-between items-center text-xs"},
+                                React.createElement('span', {className: `px-2 py-1 rounded ${getStatusColor(leave.status)}`}, leave.type),
+                                React.createElement('span', {className: "text-gray-500"}, new Date(leave.startDate).toLocaleDateString())
+                              )
+                            )
+                          )
+                        )
+                      )
+                    );
+                  })
+                )
+              )
+            ),
+
+            // Employee Modal
+            showEmployeeModal && React.createElement('div', {className: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"},
+              React.createElement('div', {className: "bg-white rounded-xl p-6 w-full max-w-md"},
+                React.createElement('div', {className: "flex items-center justify-between mb-4"},
+                  React.createElement('h3', {className: "text-lg font-semibold"}, editingEmployee ? 'Edit Employee' : 'Add New Employee'),
+                  React.createElement('button', {onClick: () => setShowEmployeeModal(false), className: "text-gray-400 hover:text-gray-600"}, "✕")
+                ),
+                
+                React.createElement('div', {className: "space-y-4"},
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Full Name *"),
+                    React.createElement('input', {
+                      type: "text",
+                      value: employeeForm.name,
+                      onChange: (e) => setEmployeeForm(prev => ({...prev, name: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                      placeholder: "e.g., John Smith"
+                    })
+                  ),
+                  
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Department *"),
+                    React.createElement('select', {
+                      value: employeeForm.department,
+                      onChange: (e) => setEmployeeForm(prev => ({...prev, department: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    },
+                      React.createElement('option', {value: ""}, "Select Department"),
+                      React.createElement('option', {value: "Workshop"}, "Workshop"),
+                      React.createElement('option', {value: "Finishing"}, "Finishing"),
+                      React.createElement('option', {value: "Administration"}, "Administration"),
+                      React.createElement('option', {value: "Sales"}, "Sales"),
+                      React.createElement('option', {value: "Quality Control"}, "Quality Control")
+                    )
+                  ),
+                  
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Total Leave (hours)"),
+                    React.createElement('input', {
+                      type: "number",
+                      value: employeeForm.totalLeave,
+                      onChange: (e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                      min: "0"
+                    })
+                  ),
+                  
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Used Leave (hours)"),
+                    React.createElement('input', {
+                      type: "number",
+                      value: employeeForm.usedLeave,
+                      onChange: (e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                      min: "0"
+                    })
+                  ),
+                  
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Avatar Color"),
+                    React.createElement('div', {className: "flex flex-wrap gap-2"},
+                      ...colorOptions.map(color =>
+                        React.createElement('button', {
+                          key: color,
+                          type: "button",
+                          onClick: () => setEmployeeForm(prev => ({...prev, color})),
+                          className: `w-8 h-8 rounded-full border-2 ${
+                            employeeForm.color === color ? 'border-gray-800 scale-110' : 'border-gray-300'
+                          }`,
+                          style: { backgroundColor: color }
+                        })
+                      )
+                    )
+                  ),
+                  
+                  React.createElement('div', {className: "flex justify-end space-x-3 pt-4"},
+                    React.createElement('button', {
+                      onClick: () => setShowEmployeeModal(false),
+                      className: "px-4 py-2 text-gray-600 hover:text-gray-800"
+                    }, "Cancel"),
+                    React.createElement('button', {
+                      onClick: saveEmployee,
+                      className: "px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    }, `${editingEmployee ? 'Update' : 'Add'} Employee`)
+                  )
+                )
+              )
+            ),
+
+            // Quick Leave Modal
+            showQuickLeaveModal && selectedDate && React.createElement('div', {className: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"},
+              React.createElement('div', {className: "bg-white rounded-xl p-6 w-full max-w-md"},
+                React.createElement('div', {className: "flex items-center justify-between mb-4"},
+                  React.createElement('h3', {className: "text-lg font-semibold"}, `Quick Add Leave - ${selectedDate.toLocaleDateString()}`),
+                  React.createElement('button', {onClick: () => setShowQuickLeaveModal(false), className: "text-gray-400 hover:text-gray-600"}, "✕")
+                ),
+                
+                React.createElement('div', {className: "space-y-4"},
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Employee"),
+                    React.createElement('select', {
+                      value: quickLeaveForm.employeeId,
+                      onChange: (e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    },
+                      ...employees.map(emp =>
+                        React.createElement('option', {key: emp.id, value: emp.id}, emp.name)
+                      )
+                    )
+                  ),
+
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Number of Days"),
+                    React.createElement('select', {
+                      value: quickLeaveForm.days,
+                      onChange: (e) => setQuickLeaveForm(prev => ({...prev, days: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    },
+                      React.createElement('option', {value: "1"}, "1 Day (8 hours)"),
+                      React.createElement('option', {value: "2"}, "2 Days (16 hours)"),
+                      React.createElement('option', {value: "3"}, "3 Days (24 hours)"),
+                      React.createElement('option', {value: "5"}, "5 Days (40 hours)")
+                    )
+                  ),
+
+                  React.createElement('div', null,
+                    React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Leave Type"),
+                    React.createElement('select', {
+                      value: quickLeaveForm.type,
+                      onChange: (e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value})),
+                      className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    },
+                      React.createElement('option', {value: "Annual Leave"}, "Annual Leave"),
+                      React.createElement('option', {value: "Sick Leave"}, "Sick Leave"),
+                      React.createElement('option', {value: "Personal Leave"}, "Personal Leave")
+                    )
+                  ),
+                  
+                  React.createElement('div', {className: "flex justify-end space-x-3 pt-4"},
+                    React.createElement('button', {
+                      onClick: () => setShowQuickLeaveModal(false),
+                      className: "px-4 py-2 text-gray-600 hover:text-gray-800"
+                    }, "Cancel"),
+                    React.createElement('button', {
+                      onClick: saveQuickLeave,
+                      className: "px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    }, "Add Leave")
+                  )
+                )
+              )
+            )
+          );
+        };
+
+        ReactDOM.render(React.createElement(LeaveCalendar), document.getElementById('root'));
+    </script>
+</body>
+</html>
+
+            // Settings View
+            currentView === 'settings' && React.createElement('div', {className: "max-w-4xl mx-auto px-6 py-8"},
+              React.createElement('div', {className: "bg-white rounded-xl shadow-sm border p-6"},
+                React.createElement('div', {className: "mb-6"},
+                  React.createElement('h2', {className: "text-2xl font-bold text-gray-900 mb-2"}, "Workshop Settings"),
+                  React.createElement('p', {className: "text-gray-600"}, "Manage workshop shutdowns and other calendar settings")
+                ),
+                
+                React.createElement('div', {className: "grid grid-cols-1 lg:grid-cols-2 gap-8"},
+                  // Add Workshop Shutdown Form
+                  React.createElement('div', null,
+                    React.createElement('h3', {className: "text-lg font-semibold text-gray-900 mb-4 flex items-center"},
+                      React.createElement(Icon, {name: "factory", className: "h-5 w-5 mr-2"}),
+                      "Add Workshop Shutdown"
+                    ),
+                    
+                    React.createElement('div', {className: "space-y-4"},
+                      React.createElement('div', null,
+                        React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Shutdown Name *"),
+                        React.createElement('input', {
+                          type: "text",
+                          value: shutdownForm.name,
+                          onChange: (e) => setShutdownForm(prev => ({...prev, name: e.target.value})),
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                          placeholder: "e.g., Christmas Break, Annual Maintenance"
+                        })
+                      ),
+                      
+                      React.createElement('div', null,
+                        React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Start Date *"),
+                        React.createElement('input', {
+                          type: "date",
+                          value: shutdownForm.startDate,
+                          onChange: (e) => setShutdownForm(prev => ({...prev, startDate: e.target.value})),
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        })
+                      ),
+                      
+                      React.createElement('div', null,
+                        React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "End Date *"),
+                        React.createElement('input', {
+                          type: "date",
+                          value: shutdownForm.endDate,
+                          onChange: (e) => setShutdownForm(prev => ({...prev, endDate: e.target.value})),
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        })
+                      ),
+                      
+                      React.createElement('div', null,
+                        React.createElement('label', {className: "block text-sm font-medium text-gray-700 mb-2"}, "Description"),
+                        React.createElement('textarea', {
+                          value: shutdownForm.description,
+                          onChange: (e) => setShutdownForm(prev => ({...prev, description: e.target.value})),
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                          rows: 3,
+                          placeholder: "Optional description..."
+                        })
+                      ),
+                      
+                      React.createElement('button', {
+                        onClick: saveWorkshopShutdown,
+                        className: "w-full px-<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -58,7 +414,9 @@
                 wifiOff: "M18.364 5.636l-12.728 12.728m0 0L1.394 14.122m4.242 4.242a5.5 5.5 0 007.778 0m7.778-7.778a10.97 10.97 0 00-3.536-2.464m-6.242 6.242L7.758 8.879m0 0a10.97 10.97 0 00-3.536 2.464",
                 chevronLeft: "M15 19l-7-7 7-7",
                 userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
-                home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+                settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+                factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
             };
             return React.createElement('svg', {
                 className: className,
@@ -104,6 +462,18 @@
                 }];
             }
 
+            async fetchWorkshopShutdowns() {
+                const stored = localStorage.getItem('atkin_workshop_shutdowns');
+                if (stored) {
+                    return JSON.parse(stored).map(shutdown => ({
+                        ...shutdown,
+                        startDate: new Date(shutdown.startDate),
+                        endDate: new Date(shutdown.endDate)
+                    }));
+                }
+                return [];
+            }
+
             async saveData(type, data) {
                 if (type === 'leave_requests') {
                     const serialized = data.map(req => ({
@@ -134,7 +504,14 @@
           const [isLoading, setIsLoading] = useState(true);
           const [showSidebar, setShowSidebar] = useState(false);
           const [currentView, setCurrentView] = useState('calendar');
+          const [showSettingsModal, setShowSettingsModal] = useState(false);
           const [dbApi] = useState(() => new DatabaseAPI());
+
+          // Workshop shutdowns state
+          const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
+          const [shutdownForm, setShutdownForm] = useState({
+            name: '', startDate: '', endDate: '', description: ''
+          });
 
           const [quickLeaveForm, setQuickLeaveForm] = useState({
             employeeId: '1', days: 1, type: 'Annual Leave'
@@ -248,16 +625,33 @@
             return 'grid-cols-7';
           };
 
-          const getLeaveForDate = (date) => leaveRequests.filter(leave => {
-            const leaveStart = new Date(leave.startDate);
-            const leaveEnd = new Date(leave.endDate);
-            return date >= leaveStart && date <= leaveEnd;
-          });
+          const getLeaveForDate = (date) => {
+            const regularLeave = leaveRequests.filter(leave => {
+              const leaveStart = new Date(leave.startDate);
+              const leaveEnd = new Date(leave.endDate);
+              return date >= leaveStart && date <= leaveEnd;
+            });
+            
+            const shutdownsOnDate = workshopShutdowns.filter(shutdown => {
+              const shutdownStart = new Date(shutdown.startDate);
+              const shutdownEnd = new Date(shutdown.endDate);
+              return date >= shutdownStart && date <= shutdownEnd;
+            });
+            
+            return [...regularLeave, ...shutdownsOnDate.map(shutdown => ({
+              id: `shutdown-${shutdown.id}`,
+              type: 'Workshop Shutdown',
+              status: 'shutdown',
+              isShutdown: true,
+              name: shutdown.name
+            }))];
+          };
 
           const getStatusColor = (status) => {
             switch(status) {
               case 'approved': return 'bg-green-100 text-green-800';
               case 'pending': return 'bg-yellow-100 text-yellow-800';
+              case 'shutdown': return 'bg-red-100 text-red-800';
               default: return 'bg-gray-100 text-gray-800';
             }
           };
@@ -266,7 +660,45 @@
           const syncData = async () => {
             await dbApi.saveData('employees', employees);
             await dbApi.saveData('leave_requests', leaveRequests);
+            await dbApi.saveWorkshopShutdowns(workshopShutdowns);
             addNotification('Data synced successfully', 'success');
+          };
+
+          const saveWorkshopShutdown = async () => {
+            if (!shutdownForm.name.trim() || !shutdownForm.startDate || !shutdownForm.endDate) {
+              addNotification('Please fill in all required fields', 'error');
+              return;
+            }
+
+            const startDate = new Date(shutdownForm.startDate);
+            const endDate = new Date(shutdownForm.endDate);
+            
+            if (endDate < startDate) {
+              addNotification('End date must be after start date', 'error');
+              return;
+            }
+
+            const newShutdown = {
+              id: Math.max(...workshopShutdowns.map(s => s.id), 0) + 1,
+              name: shutdownForm.name,
+              startDate: startDate,
+              endDate: endDate,
+              description: shutdownForm.description
+            };
+
+            setWorkshopShutdowns(prev => [...prev, newShutdown]);
+            await syncData();
+            
+            setShutdownForm({ name: '', startDate: '', endDate: '', description: '' });
+            addNotification('Workshop shutdown added successfully', 'success');
+          };
+
+          const deleteWorkshopShutdown = async (shutdownId) => {
+            if (confirm('Are you sure you want to delete this workshop shutdown?')) {
+              setWorkshopShutdowns(prev => prev.filter(s => s.id !== shutdownId));
+              await syncData();
+              addNotification('Workshop shutdown deleted', 'success');
+            }
           };
 
           const saveQuickLeave = async () => {
@@ -372,12 +804,14 @@
           // Load initial data
           useEffect(() => {
             const loadData = async () => {
-              const [employeesData, leaveRequestsData] = await Promise.all([
+              const [employeesData, leaveRequestsData, shutdownsData] = await Promise.all([
                 dbApi.fetchEmployees(), 
-                dbApi.fetchLeaveRequests()
+                dbApi.fetchLeaveRequests(),
+                dbApi.fetchWorkshopShutdowns()
               ]);
               setEmployees(employeesData);
               setLeaveRequests(leaveRequestsData);
+              setWorkshopShutdowns(shutdownsData);
               setIsLoading(false);
               setTimeout(() => setShowConnectionIndicator(false), 3000);
             };
@@ -607,6 +1041,14 @@
                             
                             React.createElement('div', {className: "space-y-1"},
                               ...dayLeaves.map(leave => {
+                                if (leave.isShutdown) {
+                                  return React.createElement('div', {
+                                    key: leave.id,
+                                    className: `text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`,
+                                    title: leave.name
+                                  }, 'Workshop Closed');
+                                }
+                                
                                 const employee = employees.find(emp => emp.id === leave.employeeId);
                                 if (!employee) return null;
                                 

@@ -788,6 +788,26 @@
                       return leaveStart.getMonth() === month.getMonth() && leaveStart.getFullYear() === month.getFullYear();
                     });
                     
+                    // Group leaves by employee and calculate totals
+                    const employeeMap = new Map();
+                    monthLeaves.forEach(leave => {
+                      const employeeId = leave.employeeId;
+                      if (employeeMap.has(employeeId)) {
+                        // Add to existing employee's total
+                        const existing = employeeMap.get(employeeId);
+                        existing.totalDays += (leave.hours / 8);
+                      } else {
+                        // Create new entry for this employee
+                        employeeMap.set(employeeId, {
+                          employeeId: employeeId,
+                          status: leave.status,
+                          totalDays: (leave.hours / 8)
+                        });
+                      }
+                    });
+                    
+                    const uniqueEmployeeLeaves = Array.from(employeeMap.values());
+                    
                     return (
                       <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer" 
                            onClick={() => {
@@ -796,27 +816,19 @@
                            }}>
                         <h3 className="font-medium text-gray-900 mb-2">{monthNames[month.getMonth()]}</h3>
                         <div className="space-y-1">
-                          {monthLeaves.slice(0, 3).map(leave => {
-                            const employee = employees.find(emp => emp.id === leave.employeeId);
+                          {uniqueEmployeeLeaves.slice(0, 3).map(employeeLeave => {
+                            const employee = employees.find(emp => emp.id === employeeLeave.employeeId);
                             if (!employee) return null;
+                            
                             return (
-                              <div key={leave.id} className={`text-xs px-2 py-1 rounded flex items-center justify-between group ${getStatusColor(leave.status)}`}>
+                              <div key={`${employeeLeave.employeeId}-${month.getMonth()}-${month.getFullYear()}`} className={`text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(employeeLeave.status)}`}>
                                 <span className="truncate">{employee.name.split(' ')[0]}</span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    cancelSingleDayLeave(leave, month);
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded transition-all"
-                                  title="Cancel leave"
-                                >
-                                  <X className="h-2 w-2" />
-                                </button>
+                                <span className="text-xs ml-2">{employeeLeave.totalDays}d</span>
                               </div>
                             );
                           })}
-                          {monthLeaves.length > 3 && (
-                            <div className="text-xs text-gray-500">+{monthLeaves.length - 3} more</div>
+                          {uniqueEmployeeLeaves.length > 3 && (
+                            <div className="text-xs text-gray-500">+{uniqueEmployeeLeaves.length - 3} more</div>
                           )}
                         </div>
                       </div>

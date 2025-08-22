@@ -14,25 +14,15 @@
             margin: 0; 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; 
         }
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-size: 18px;
-            color: #666;
-        }
     </style>
 </head>
 <body>
-    <div id="root">
-        <div class="loading">Loading Atkin Guitars Leave Calendar...</div>
-    </div>
+    <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useMemo } = React;
         
-        // All icon components defined first
+        // Simple icon components
         const Calendar = ({ className, style }) => (
             <svg className={className} style={style} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -70,14 +60,11 @@
         );
 
         const LeaveCalendar = () => {
-          // All state declarations at the top
           const [currentDate, setCurrentDate] = useState(new Date());
-          const [viewMode, setViewMode] = useState('month');
           const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
           const [showEmployeeModal, setShowEmployeeModal] = useState(false);
           const [selectedDate, setSelectedDate] = useState(null);
           const [editingEmployee, setEditingEmployee] = useState(null);
-          const [searchTerm, setSearchTerm] = useState('');
           
           const [employees, setEmployees] = useState([
             {
@@ -130,12 +117,11 @@
           const [employeeForm, setEmployeeForm] = useState({
             name: '',
             department: '',
-            totalLeave: 160,
-            usedLeave: 0,
+            totalLeave: '160',
+            usedLeave: '0',
             color: '#3B82F6'
           });
 
-          // Constants
           const companyBranding = {
             companyName: 'Atkin Guitars',
             primaryColor: '#3B82F6'
@@ -143,8 +129,7 @@
 
           const colorOptions = [
             '#3B82F6', '#10B981', '#F59E0B', '#EF4444', 
-            '#8B5CF6', '#06B6D4', '#84CC16', '#F97316',
-            '#EC4899', '#6366F1', '#14B8A6', '#9CA3AF'
+            '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'
           ];
 
           const monthNames = [
@@ -152,12 +137,6 @@
             'July', 'August', 'September', 'October', 'November', 'December'
           ];
 
-          // Helper function to safely convert to number
-          const safeNumber = (value) => {
-            const num = Number(value);
-            return isNaN(num) ? 0 : num;
-          };
-          // Helper functions
           const generateInitials = (name) => {
             return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
           };
@@ -211,7 +190,6 @@
             });
           };
 
-          // Quick leave functions
           const openQuickLeaveModal = (date) => {
             setSelectedDate(date);
             setQuickLeaveForm({
@@ -244,7 +222,7 @@
 
             const remainingLeave = employee.totalLeave - employee.usedLeave;
             if (totalHours > remainingLeave) {
-              alert(`Employee only has ${formatHours(remainingLeave)} remaining. This request requires ${formatHours(totalHours)}.`);
+              alert(`Employee only has ${formatHours(remainingLeave)} remaining.`);
               return;
             }
 
@@ -262,8 +240,7 @@
               endDate: endDate,
               type: quickLeaveForm.type,
               status: 'pending',
-              hours: totalHours,
-              notes: `Quick add: ${days} day${days > 1 ? 's' : ''} starting ${startDate.toLocaleDateString()}`
+              hours: totalHours
             };
 
             setLeaveRequests(prev => [...prev, newLeaveRequest]);
@@ -276,15 +253,14 @@
             closeQuickLeaveModal();
           };
 
-          // Employee management functions
           const openEmployeeModal = (employee = null) => {
             if (employee) {
               setEditingEmployee(employee);
               setEmployeeForm({
                 name: employee.name,
                 department: employee.department,
-                totalLeave: parseInt(employee.totalLeave) || 0,
-                usedLeave: parseInt(employee.usedLeave) || 0,
+                totalLeave: employee.totalLeave.toString(),
+                usedLeave: employee.usedLeave.toString(),
                 color: employee.color
               });
             } else {
@@ -292,8 +268,8 @@
               setEmployeeForm({
                 name: '',
                 department: '',
-                totalLeave: 160,
-                usedLeave: 0,
+                totalLeave: '160',
+                usedLeave: '0',
                 color: colorOptions[employees.length % colorOptions.length]
               });
             }
@@ -303,13 +279,6 @@
           const closeEmployeeModal = () => {
             setShowEmployeeModal(false);
             setEditingEmployee(null);
-            setEmployeeForm({
-              name: '',
-              department: '',
-              totalLeave: 160,
-              usedLeave: 0,
-              color: '#3B82F6'
-            });
           };
 
           const saveEmployee = () => {
@@ -318,6 +287,9 @@
               return;
             }
 
+            const totalLeave = parseInt(employeeForm.totalLeave) || 0;
+            const usedLeave = parseInt(employeeForm.usedLeave) || 0;
+
             if (editingEmployee) {
               setEmployees(prev => prev.map(emp => 
                 emp.id === editingEmployee.id 
@@ -325,8 +297,8 @@
                       ...emp,
                       name: employeeForm.name,
                       department: employeeForm.department,
-                      totalLeave: parseInt(employeeForm.totalLeave) || 0,
-                      usedLeave: parseInt(employeeForm.usedLeave) || 0,
+                      totalLeave: totalLeave,
+                      usedLeave: usedLeave,
                       color: employeeForm.color,
                       avatar: generateInitials(employeeForm.name)
                     }
@@ -338,8 +310,8 @@
                 id: newId,
                 name: employeeForm.name,
                 department: employeeForm.department,
-                totalLeave: parseInt(employeeForm.totalLeave) || 0,
-                usedLeave: parseInt(employeeForm.usedLeave) || 0,
+                totalLeave: totalLeave,
+                usedLeave: usedLeave,
                 avatar: generateInitials(employeeForm.name),
                 color: employeeForm.color
               };
@@ -357,107 +329,7 @@
 
           return (
             <div className="min-h-screen bg-gray-50">
-              {/* Quick Leave Modal */}
-              {showQuickLeaveModal && selectedDate && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">
-                        Quick Add Leave - {selectedDate.toLocaleDateString()}
-                      </h3>
-                      <button 
-                        onClick={closeQuickLeaveModal}
-                        className="text-gray-400 hover:text-gray-600"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Employee
-                        </label>
-                        <select
-                          value={quickLeaveForm.employeeId}
-                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          {employees.map(emp => {
-                            const remaining = emp.totalLeave - emp.usedLeave;
-                            return (
-                              <option key={emp.id} value={emp.id}>
-                                {emp.name} - {formatHours(remaining)} remaining
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Number of Days
-                        </label>
-                        <select
-                          value={quickLeaveForm.days}
-                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, days: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="1">1 Day (8 hours)</option>
-                          <option value="2">2 Days (16 hours)</option>
-                          <option value="3">3 Days (24 hours)</option>
-                          <option value="5">5 Days (40 hours)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Leave Type
-                        </label>
-                        <select
-                          value={quickLeaveForm.type}
-                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="Annual Leave">Annual Leave</option>
-                          <option value="Sick Leave">Sick Leave</option>
-                          <option value="Personal Leave">Personal Leave</option>
-                        </select>
-                      </div>
-                      
-                      <div className="flex justify-end space-x-3 pt-4">
-                        <button 
-                          onClick={closeQuickLeaveModal}
-                          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button 
-                          onClick={saveQuickLeave}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          Add Leave
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        };
-
-        // Render the app
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', () => {
-            ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
-          });
-        } else {
-          ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
-        }
-    </script>
-</body>
-</html> Header */}
+              {/* Header */}
               <div className="bg-white shadow-sm border-b">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                   <div className="flex items-center justify-between flex-wrap gap-4">
@@ -468,7 +340,7 @@
                       </div>
                     </div>
                     
-                    <div className="flex items-center space-x-4 flex-wrap">
+                    <div className="flex items-center space-x-4">
                       <button 
                         onClick={() => openEmployeeModal()}
                         className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -500,23 +372,17 @@
                           return (
                             <div 
                               key={employee.id} 
-                              className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer relative group"
+                              className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow relative group"
                             >
                               <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEmployeeModal(employee);
-                                  }}
+                                  onClick={() => openEmployeeModal(employee)}
                                   className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
                                 >
                                   <Edit className="h-4 w-4" />
                                 </button>
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteEmployee(employee.id);
-                                  }}
+                                  onClick={() => deleteEmployee(employee.id)}
                                   className="p-1 text-gray-400 hover:text-red-600 transition-colors"
                                 >
                                   <Trash className="h-4 w-4" />
@@ -713,13 +579,8 @@
                         </label>
                         <input
                           type="number"
-                          value={employeeForm.totalLeave || ''}
-                          onChange={(e) => {
-                            const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                            if (!isNaN(value) && value >= 0) {
-                              setEmployeeForm(prev => ({...prev, totalLeave: value}));
-                            }
-                          }}
+                          value={employeeForm.totalLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                           max="400"
@@ -735,20 +596,13 @@
                         </label>
                         <input
                           type="number"
-                          value={employeeForm.usedLeave || ''}
-                          onChange={(e) => {
-                            const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                            const maxValue = employeeForm.totalLeave || 0;
-                            if (!isNaN(value) && value >= 0) {
-                              setEmployeeForm(prev => ({...prev, usedLeave: Math.min(value, maxValue)}));
-                            }
-                          }}
+                          value={employeeForm.usedLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
-                          max={employeeForm.totalLeave || 0}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Remaining: {formatHours((employeeForm.totalLeave || 0) - (employeeForm.usedLeave || 0))}
+                          Remaining: {formatHours((parseInt(employeeForm.totalLeave) || 0) - (parseInt(employeeForm.usedLeave) || 0))}
                         </p>
                       </div>
                       
@@ -799,4 +653,98 @@
                 </div>
               )}
 
-              {/*
+              {/* Quick Leave Modal */}
+              {showQuickLeaveModal && selectedDate && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">
+                        Quick Add Leave - {selectedDate.toLocaleDateString()}
+                      </h3>
+                      <button 
+                        onClick={closeQuickLeaveModal}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Employee
+                        </label>
+                        <select
+                          value={quickLeaveForm.employeeId}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {employees.map(emp => {
+                            const remaining = emp.totalLeave - emp.usedLeave;
+                            return (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name} - {formatHours(remaining)} remaining
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Number of Days
+                        </label>
+                        <select
+                          value={quickLeaveForm.days}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, days: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="1">1 Day (8 hours)</option>
+                          <option value="2">2 Days (16 hours)</option>
+                          <option value="3">3 Days (24 hours)</option>
+                          <option value="5">5 Days (40 hours)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leave Type
+                        </label>
+                        <select
+                          value={quickLeaveForm.type}
+                          onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="Annual Leave">Annual Leave</option>
+                          <option value="Sick Leave">Sick Leave</option>
+                          <option value="Personal Leave">Personal Leave</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex justify-end space-x-3 pt-4">
+                        <button 
+                          onClick={closeQuickLeaveModal}
+                          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={saveQuickLeave}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Add Leave
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // Render the app
+        ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
+    </script>
+</body>
+</html>

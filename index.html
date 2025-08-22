@@ -82,14 +82,34 @@
             </svg>
         );
 
+        const Edit = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+        );
+
+        const UserPlus = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+        );
+
+        const Trash = ({ className }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        );
+
         const LeaveCalendar = () => {
           const [currentDate, setCurrentDate] = useState(new Date());
           const [viewMode, setViewMode] = useState('month');
           const [selectedEmployee, setSelectedEmployee] = useState('all');
           const [showSettings, setShowSettings] = useState(false);
+          const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+          const [editingEmployee, setEditingEmployee] = useState(null);
           const [searchTerm, setSearchTerm] = useState('');
           
-          const [employees] = useState([
+          const [employees, setEmployees] = useState([
             {
               id: 1,
               name: 'Sarah Johnson',
@@ -97,7 +117,7 @@
               totalLeave: 200,
               usedLeave: 64,
               avatar: 'SJ',
-              color: '#8B4513'
+              color: '#3B82F6'
             },
             {
               id: 2,
@@ -106,7 +126,7 @@
               totalLeave: 160,
               usedLeave: 32,
               avatar: 'MC',
-              color: '#D2691E'
+              color: '#10B981'
             },
             {
               id: 3,
@@ -115,7 +135,7 @@
               totalLeave: 180,
               usedLeave: 96,
               avatar: 'ED',
-              color: '#CD853F'
+              color: '#F59E0B'
             },
             {
               id: 4,
@@ -124,7 +144,7 @@
               totalLeave: 200,
               usedLeave: 48,
               avatar: 'JW',
-              color: '#A0522D'
+              color: '#EF4444'
             }
           ]);
 
@@ -160,9 +180,29 @@
 
           const [companyBranding] = useState({
             companyName: 'Atkin Guitars',
-            primaryColor: '#8B4513',
+            primaryColor: '#3B82F6',
             logo: null
           });
+
+          const [employeeForm, setEmployeeForm] = useState({
+            name: '',
+            department: '',
+            totalLeave: 160,
+            usedLeave: 0,
+            color: '#3B82F6'
+          });
+
+          // Predefined colors for employees
+          const colorOptions = [
+            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', 
+            '#8B5CF6', '#06B6D4', '#84CC16', '#F97316',
+            '#EC4899', '#6366F1', '#14B8A6', '#F59E0B'
+          ];
+
+          // Generate initials from name
+          const generateInitials = (name) => {
+            return name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
+          };
 
           const filteredEmployees = useMemo(() => {
             return employees.filter(emp => 
@@ -226,8 +266,88 @@
             });
           };
 
+          const openEmployeeModal = (employee = null) => {
+            if (employee) {
+              setEditingEmployee(employee);
+              setEmployeeForm({
+                name: employee.name,
+                department: employee.department,
+                totalLeave: employee.totalLeave,
+                usedLeave: employee.usedLeave,
+                color: employee.color
+              });
+            } else {
+              setEditingEmployee(null);
+              setEmployeeForm({
+                name: '',
+                department: '',
+                totalLeave: 160,
+                usedLeave: 0,
+                color: colorOptions[employees.length % colorOptions.length]
+              });
+            }
+            setShowEmployeeModal(true);
+          };
+
+          const closeEmployeeModal = () => {
+            setShowEmployeeModal(false);
+            setEditingEmployee(null);
+            setEmployeeForm({
+              name: '',
+              department: '',
+              totalLeave: 160,
+              usedLeave: 0,
+              color: '#3B82F6'
+            });
+          };
+
+          const saveEmployee = () => {
+            if (!employeeForm.name.trim() || !employeeForm.department.trim()) {
+              alert('Please fill in all required fields');
+              return;
+            }
+
+            if (editingEmployee) {
+              // Update existing employee
+              setEmployees(prev => prev.map(emp => 
+                emp.id === editingEmployee.id 
+                  ? {
+                      ...emp,
+                      name: employeeForm.name,
+                      department: employeeForm.department,
+                      totalLeave: parseInt(employeeForm.totalLeave),
+                      usedLeave: parseInt(employeeForm.usedLeave),
+                      color: employeeForm.color,
+                      avatar: generateInitials(employeeForm.name)
+                    }
+                  : emp
+              ));
+            } else {
+              // Add new employee
+              const newId = Math.max(...employees.map(emp => emp.id)) + 1;
+              const newEmployee = {
+                id: newId,
+                name: employeeForm.name,
+                department: employeeForm.department,
+                totalLeave: parseInt(employeeForm.totalLeave),
+                usedLeave: parseInt(employeeForm.usedLeave),
+                avatar: generateInitials(employeeForm.name),
+                color: employeeForm.color
+              };
+              setEmployees(prev => [...prev, newEmployee]);
+            }
+            
+            closeEmployeeModal();
+          };
+
+          const deleteEmployee = (employeeId) => {
+            if (confirm('Are you sure you want to delete this employee?')) {
+              setEmployees(prev => prev.filter(emp => emp.id !== employeeId));
+            }
+          };
+
           return (
-            <div className="min-h-screen bg-amber-50">
+            <div className="min-h-screen bg-gray-50">
               <div className="bg-white shadow-sm border-b">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                   <div className="flex items-center justify-between flex-wrap gap-4">
@@ -246,14 +366,14 @@
                           placeholder="Search employees..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>
                       
                       <select
                         value={selectedEmployee}
                         onChange={(e) => setSelectedEmployee(e.target.value)}
-                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value="all">All Employees</option>
                         {employees.map(emp => (
@@ -261,7 +381,7 @@
                         ))}
                       </select>
                       
-                      <div className="flex bg-amber-100 rounded-lg p-1">
+                      <div className="flex bg-gray-100 rounded-lg p-1">
                         {['week', 'month', 'year'].map(mode => (
                           <button
                             key={mode}
@@ -277,7 +397,15 @@
                         ))}
                       </div>
                       
-                      <button className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-colors" style={{ backgroundColor: companyBranding.primaryColor }}>
+                      <button 
+                        onClick={() => openEmployeeModal()}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        <span>Add Employee</span>
+                      </button>
+                      
+                      <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                         <Plus className="h-4 w-4" />
                         <span>Add Leave</span>
                       </button>
@@ -310,9 +438,30 @@
                           return (
                             <div 
                               key={employee.id}
-                              className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                              className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer relative group"
                               onClick={() => setSelectedEmployee(employee.id.toString())}
                             >
+                              <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEmployeeModal(employee);
+                                  }}
+                                  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteEmployee(employee.id);
+                                  }}
+                                  className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                >
+                                  <Trash className="h-4 w-4" />
+                                </button>
+                              </div>
+                              
                               <div className="flex items-center space-x-3 mb-3">
                                 <div 
                                   className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium"
@@ -409,10 +558,10 @@
                                 key={index}
                                 className={`min-h-[96px] p-2 border border-gray-200 hover:bg-gray-50 transition-colors ${
                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                                } ${isToday ? 'bg-amber-50 border-amber-200' : ''}`}
+                                } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`}
                               >
                                 <div className={`text-sm font-medium mb-1 ${
-                                  isToday ? 'text-amber-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                                  isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
                                 }`}>
                                   {date.getDate()}
                                 </div>
@@ -447,7 +596,7 @@
                             <p className="text-sm font-medium text-gray-600">Total Leave Requests</p>
                             <p className="text-2xl font-bold text-gray-900">{leaveRequests.length}</p>
                           </div>
-                          <Clock className="h-8 w-8" style={{ color: companyBranding.primaryColor }} />
+                          <Clock className="h-8 w-8 text-blue-500" />
                         </div>
                       </div>
                       
@@ -468,7 +617,7 @@
                           <div>
                             <p className="text-sm font-medium text-gray-600">Team Utilization</p>
                             <p className="text-2xl font-bold text-green-600">
-                              {Math.round(employees.reduce((acc, emp) => acc + (emp.usedLeave / emp.totalLeave * 100), 0) / employees.length)}%
+                              {employees.length > 0 ? Math.round(employees.reduce((acc, emp) => acc + (emp.usedLeave / emp.totalLeave * 100), 0) / employees.length) : 0}%
                             </p>
                           </div>
                           <Users className="h-8 w-8 text-green-500" />
@@ -479,6 +628,137 @@
                 </div>
               </div>
 
+              {/* Employee Modal */}
+              {showEmployeeModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">
+                        {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+                      </h3>
+                      <button 
+                        onClick={closeEmployeeModal}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Full Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={employeeForm.name}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, name: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="e.g., John Smith"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Department *
+                        </label>
+                        <select
+                          value={employeeForm.department}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, department: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Department</option>
+                          <option value="Workshop">Workshop</option>
+                          <option value="Finishing">Finishing</option>
+                          <option value="Administration">Administration</option>
+                          <option value="Sales">Sales</option>
+                          <option value="Quality Control">Quality Control</option>
+                          <option value="Design">Design</option>
+                          <option value="Maintenance">Maintenance</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Annual Leave Allocation (hours)
+                        </label>
+                        <input
+                          type="number"
+                          value={employeeForm.totalLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          min="0"
+                          max="400"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Standard: 160 hours (20 days), Senior: 200 hours (25 days)
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leave Used (hours)
+                        </label>
+                        <input
+                          type="number"
+                          value={employeeForm.usedLeave}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: Math.min(e.target.value, employeeForm.totalLeave)}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          min="0"
+                          max={employeeForm.totalLeave}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Remaining: {formatHours(employeeForm.totalLeave - employeeForm.usedLeave)}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Avatar Color
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {colorOptions.map(color => (
+                            <button
+                              key={color}
+                              onClick={() => setEmployeeForm(prev => ({...prev, color}))}
+                              className={`w-8 h-8 rounded-full border-2 transition-all ${
+                                employeeForm.color === color ? 'border-gray-800 scale-110' : 'border-gray-300'
+                              }`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                        <div className="mt-2 flex items-center space-x-2">
+                          <div 
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
+                            style={{ backgroundColor: employeeForm.color }}
+                          >
+                            {employeeForm.name ? generateInitials(employeeForm.name) : '??'}
+                          </div>
+                          <span className="text-sm text-gray-600">Preview</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end space-x-3 pt-4">
+                        <button 
+                          onClick={closeEmployeeModal}
+                          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={saveEmployee}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          {editingEmployee ? 'Update Employee' : 'Add Employee'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Settings Modal */}
               {showSettings && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-xl p-6 w-full max-w-md">
@@ -500,7 +780,7 @@
                         <input
                           type="text"
                           defaultValue={companyBranding.companyName}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>
                       
@@ -524,8 +804,7 @@
                         </button>
                         <button 
                           onClick={() => setShowSettings(false)}
-                          className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-colors"
-                          style={{ backgroundColor: companyBranding.primaryColor }}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                         >
                           Save Changes
                         </button>

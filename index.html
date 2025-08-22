@@ -159,6 +159,80 @@
             name: '', startDate: '', endDate: '', description: ''
           });
 
+          // Bank holidays for England
+          const getBankHolidays = (year) => {
+            const holidays = [];
+            
+            // Fixed dates
+            holidays.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+            
+            // Good Friday (2 days before Easter Sunday)
+            const easter = getEasterDate(year);
+            const goodFriday = new Date(easter);
+            goodFriday.setDate(easter.getDate() - 2);
+            holidays.push({ name: "Good Friday", date: goodFriday });
+            
+            // Easter Monday (1 day after Easter Sunday)
+            const easterMonday = new Date(easter);
+            easterMonday.setDate(easter.getDate() + 1);
+            holidays.push({ name: "Easter Monday", date: easterMonday });
+            
+            // Early May Bank Holiday (first Monday in May)
+            const mayBankHoliday = getFirstMondayOfMonth(year, 4); // May is month 4
+            holidays.push({ name: "Early May Bank Holiday", date: mayBankHoliday });
+            
+            // Spring Bank Holiday (last Monday in May)
+            const springBankHoliday = getLastMondayOfMonth(year, 4);
+            holidays.push({ name: "Spring Bank Holiday", date: springBankHoliday });
+            
+            // Summer Bank Holiday (last Monday in August)
+            const summerBankHoliday = getLastMondayOfMonth(year, 7); // August is month 7
+            holidays.push({ name: "Summer Bank Holiday", date: summerBankHoliday });
+            
+            // Christmas Day
+            holidays.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+            
+            // Boxing Day
+            holidays.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+            
+            return holidays;
+          };
+
+          // Calculate Easter date using the algorithm
+          const getEasterDate = (year) => {
+            const a = year % 19;
+            const b = Math.floor(year / 100);
+            const c = year % 100;
+            const d = Math.floor(b / 4);
+            const e = b % 4;
+            const f = Math.floor((b + 8) / 25);
+            const g = Math.floor((b - f + 1) / 3);
+            const h = (19 * a + b - d - g + 15) % 30;
+            const i = Math.floor(c / 4);
+            const k = c % 4;
+            const l = (32 + 2 * e + 2 * i - h - k) % 7;
+            const m = Math.floor((a + 11 * h + 22 * l) / 451);
+            const n = Math.floor((h + l - 7 * m + 114) / 31);
+            const p = (h + l - 7 * m + 114) % 31;
+            return new Date(year, n - 1, p + 1);
+          };
+
+          // Get first Monday of a month
+          const getFirstMondayOfMonth = (year, month) => {
+            const firstDay = new Date(year, month, 1);
+            const dayOfWeek = firstDay.getDay();
+            const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+            return new Date(year, month, 1 + daysUntilMonday);
+          };
+
+          // Get last Monday of a month
+          const getLastMondayOfMonth = (year, month) => {
+            const lastDay = new Date(year, month + 1, 0); // Last day of the month
+            const dayOfWeek = lastDay.getDay();
+            const daysToSubtract = dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            return new Date(year, month, lastDay.getDate() - daysToSubtract);
+          };
+
           const [quickLeaveForm, setQuickLeaveForm] = useState({
             employeeId: '1', days: 1, type: 'Annual Leave'
           });
@@ -284,13 +358,37 @@
               return date >= shutdownStart && date <= shutdownEnd;
             });
             
-            return [...regularLeave, ...shutdownsOnDate.map(shutdown => ({
-              id: `shutdown-${shutdown.id}`,
-              type: 'Workshop Shutdown',
-              status: 'shutdown',
-              isShutdown: true,
-              name: shutdown.name
-            }))];
+            // Check for bank holidays
+            const bankHolidays = getBankHolidays(date.getFullYear());
+            const bankHolidayOnDate = bankHolidays.find(holiday => {
+              return holiday.date.toDateString() === date.toDateString();
+            });
+            
+            const result = [...regularLeave];
+            
+            // Add workshop shutdowns
+            shutdownsOnDate.forEach(shutdown => {
+              result.push({
+                id: `shutdown-${shutdown.id}`,
+                type: 'Workshop Shutdown',
+                status: 'shutdown',
+                isShutdown: true,
+                name: shutdown.name
+              });
+            });
+            
+            // Add bank holiday if found
+            if (bankHolidayOnDate) {
+              result.push({
+                id: `bankholiday-${bankHolidayOnDate.name.replace(/\s+/g, '-')}`,
+                type: 'Bank Holiday',
+                status: 'bankholiday',
+                isBankHoliday: true,
+                name: bankHolidayOnDate.name
+              });
+            }
+            
+            return result;
           };
 
           const getStatusColor = (status) => {
@@ -298,6 +396,7 @@
               case 'approved': return 'bg-green-100 text-green-800';
               case 'pending': return 'bg-yellow-100 text-yellow-800';
               case 'shutdown': return 'bg-red-100 text-red-800';
+              case 'bankholiday': return 'bg-purple-100 text-purple-800';
               default: return 'bg-gray-100 text-gray-800';
             }
           };
@@ -680,6 +779,16 @@
                                                className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`}
                                                title={leave.name}>
                                             Workshop Closed
+                                          </div>
+                                        );
+                                      }
+                                      
+                                      if (leave.isBankHoliday) {
+                                        return (
+                                          <div key={leave.id}
+                                               className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`}
+                                               title={leave.name}>
+                                            Bank Holiday
                                           </div>
                                         );
                                       }

@@ -414,8 +414,9 @@
                               {viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                             </div>
                             {isCurrentMonth && (
-                              <div 
-                                onClick={() => {
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   const clickedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
                                   setSelectedDate(clickedDate);
                                   setQuickLeaveForm({
@@ -427,9 +428,10 @@
                                 }}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer select-none"
                                 title="Add leave for this day"
+                                style={{ fontSize: '12px', lineHeight: '1' }}
                               >
                                 +
-                              </div>
+                              </span>
                             )}
                           </div>
                           
@@ -794,6 +796,23 @@
                       >
                         <UserPlus className="h-4 w-4" />
                         <span>Add Employee</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          const testDate = new Date();
+                          setSelectedDate(testDate);
+                          setQuickLeaveForm({
+                            employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+                            days: 1,
+                            type: 'Annual Leave'
+                          });
+                          setShowQuickLeaveModal(true);
+                        }}
+                        className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>Test Quick Leave</span>
                       </button>
                       
                       <button 

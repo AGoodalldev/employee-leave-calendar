@@ -407,26 +407,29 @@
                             (date.getDay() === 0 || date.getDay() === 6) ? 'bg-gray-100' : ''
                           }`}
                         >
-                          <div className="flex justify-between items-center mb-1">
+                          <div className="flex justify-between items-start mb-1">
                             <div className={`text-sm font-medium ${
                               isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
                             }`}>
                               {viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                             </div>
                             {isCurrentMonth && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  console.log('Plus button clicked for date:', date); // Debug log
-                                  openQuickLeaveModal(date);
+                              <div 
+                                onClick={() => {
+                                  const clickedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                                  setSelectedDate(clickedDate);
+                                  setQuickLeaveForm({
+                                    employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+                                    days: 1,
+                                    type: 'Annual Leave'
+                                  });
+                                  setShowQuickLeaveModal(true);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer select-none"
                                 title="Add leave for this day"
                               >
                                 +
-                              </button>
+                              </div>
                             )}
                           </div>
                           
@@ -644,8 +647,7 @@
 
           // Quick Leave Functions
           const openQuickLeaveModal = (date) => {
-            console.log('Opening quick leave modal for date:', date); // Debug log
-            const dateToUse = new Date(date.getTime()); // Create a proper copy
+            const dateToUse = new Date(date.getTime());
             setSelectedDate(dateToUse);
             setQuickLeaveForm({
               employeeId: employees.length > 0 ? employees[0].id.toString() : '',

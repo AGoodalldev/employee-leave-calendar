@@ -708,7 +708,7 @@
                         <input
                           type="number"
                           value={employeeForm.totalLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: parseInt(e.target.value) || 0}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                           max="400"
@@ -725,13 +725,13 @@
                         <input
                           type="number"
                           value={employeeForm.usedLeave}
-                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: Math.min(e.target.value, employeeForm.totalLeave)}))}
+                          onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: Math.min(parseInt(e.target.value) || 0, parseInt(employeeForm.totalLeave) || 0)}))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="0"
                           max={employeeForm.totalLeave}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Remaining: {formatHours(employeeForm.totalLeave - employeeForm.usedLeave)}
+                          Remaining: {formatHours((parseInt(employeeForm.totalLeave) || 0) - (parseInt(employeeForm.usedLeave) || 0))}
                         </p>
                       </div>
                       

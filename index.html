@@ -74,47 +74,112 @@
           const [editingEmployee, setEditingEmployee] = useState(null);
           const [lastResetYear, setLastResetYear] = useState(new Date().getFullYear());
           
-          const [employees, setEmployees] = useState([
-            {
-              id: 1,
-              name: 'Sarah Johnson',
-              department: 'Workshop',
-              totalLeave: 200,
-              usedLeave: 64,
-              avatar: 'SJ',
-              color: '#3B82F6'
-            },
-            {
-              id: 2,
-              name: 'Michael Chen',
-              department: 'Finishing',
-              totalLeave: 160,
-              usedLeave: 32,
-              avatar: 'MC',
-              color: '#10B981'
-            },
-            {
-              id: 3,
-              name: 'Emma Davis',
-              department: 'Administration',
-              totalLeave: 180,
-              usedLeave: 96,
-              avatar: 'ED',
-              color: '#F59E0B'
+          // Initialize employees from localStorage or use defaults
+          const [employees, setEmployees] = useState(() => {
+            try {
+              const saved = localStorage.getItem('atkin-employees');
+              return saved ? JSON.parse(saved) : [
+                {
+                  id: 1,
+                  name: 'Sarah Johnson',
+                  department: 'Workshop',
+                  totalLeave: 200,
+                  usedLeave: 64,
+                  avatar: 'SJ',
+                  color: '#3B82F6'
+                },
+                {
+                  id: 2,
+                  name: 'Michael Chen',
+                  department: 'Finishing',
+                  totalLeave: 160,
+                  usedLeave: 32,
+                  avatar: 'MC',
+                  color: '#10B981'
+                },
+                {
+                  id: 3,
+                  name: 'Emma Davis',
+                  department: 'Administration',
+                  totalLeave: 180,
+                  usedLeave: 96,
+                  avatar: 'ED',
+                  color: '#F59E0B'
+                }
+              ];
+            } catch (error) {
+              console.warn('Error loading employees from localStorage:', error);
+              return [
+                {
+                  id: 1,
+                  name: 'Sarah Johnson',
+                  department: 'Workshop',
+                  totalLeave: 200,
+                  usedLeave: 64,
+                  avatar: 'SJ',
+                  color: '#3B82F6'
+                },
+                {
+                  id: 2,
+                  name: 'Michael Chen',
+                  department: 'Finishing',
+                  totalLeave: 160,
+                  usedLeave: 32,
+                  avatar: 'MC',
+                  color: '#10B981'
+                },
+                {
+                  id: 3,
+                  name: 'Emma Davis',
+                  department: 'Administration',
+                  totalLeave: 180,
+                  usedLeave: 96,
+                  avatar: 'ED',
+                  color: '#F59E0B'
+                }
+              ];
             }
-          ]);
+          });
 
-          const [leaveRequests, setLeaveRequests] = useState([
-            {
-              id: 1,
-              employeeId: 1,
-              startDate: new Date(2025, 7, 25),
-              endDate: new Date(2025, 7, 29),
-              type: 'Annual Leave',
-              status: 'approved',
-              hours: 40
+          // Initialize leave requests from localStorage or use defaults
+          const [leaveRequests, setLeaveRequests] = useState(() => {
+            try {
+              const saved = localStorage.getItem('atkin-leave-requests');
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                // Convert date strings back to Date objects
+                return parsed.map(req => ({
+                  ...req,
+                  startDate: new Date(req.startDate),
+                  endDate: new Date(req.endDate)
+                }));
+              }
+              return [
+                {
+                  id: 1,
+                  employeeId: 1,
+                  startDate: new Date(2025, 7, 25),
+                  endDate: new Date(2025, 7, 29),
+                  type: 'Annual Leave',
+                  status: 'approved',
+                  hours: 40
+                }
+              ];
+            } catch (error) {
+              console.warn('Error loading leave requests from localStorage:', error);
+              return [
+                {
+                  id: 1,
+                  employeeId: 1,
+                  startDate: new Date(2025, 7, 25),
+                  endDate: new Date(2025, 7, 29),
+                  type: 'Annual Leave',
+                  status: 'approved',
+                  hours: 40
+                }
+              ];
             }
-          ]);
+          });
 
           const [quickLeaveForm, setQuickLeaveForm] = useState({
             employeeId: '1',
@@ -171,6 +236,45 @@
               alert(`🎉 Happy New Year! All employee leave balances have been reset for ${currentYear}.`);
             }
           };
+
+          // Save employees to localStorage whenever employees change
+          useEffect(() => {
+            try {
+              localStorage.setItem('atkin-employees', JSON.stringify(employees));
+            } catch (error) {
+              console.warn('Error saving employees to localStorage:', error);
+            }
+          }, [employees]);
+
+          // Save leave requests to localStorage whenever they change
+          useEffect(() => {
+            try {
+              localStorage.setItem('atkin-leave-requests', JSON.stringify(leaveRequests));
+            } catch (error) {
+              console.warn('Error saving leave requests to localStorage:', error);
+            }
+          }, [leaveRequests]);
+
+          // Save last reset year to localStorage
+          useEffect(() => {
+            try {
+              localStorage.setItem('atkin-last-reset-year', lastResetYear.toString());
+            } catch (error) {
+              console.warn('Error saving last reset year to localStorage:', error);
+            }
+          }, [lastResetYear]);
+
+          // Load last reset year from localStorage on component mount
+          useEffect(() => {
+            try {
+              const saved = localStorage.getItem('atkin-last-reset-year');
+              if (saved) {
+                setLastResetYear(parseInt(saved));
+              }
+            } catch (error) {
+              console.warn('Error loading last reset year from localStorage:', error);
+            }
+          }, []);
 
           // Check for year change when component mounts or date changes
           useEffect(() => {

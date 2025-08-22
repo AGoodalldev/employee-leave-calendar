@@ -415,8 +415,14 @@
                             </div>
                             {isCurrentMonth && (
                               <span 
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSelectedDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
+                                  setQuickLeaveForm({
+                                    employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+                                    days: 1,
+                                    type: 'Annual Leave'
+                                  });
                                   setShowQuickLeaveModal(true);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer select-none"
@@ -794,6 +800,11 @@
                       <button 
                         onClick={() => {
                           setSelectedDate(new Date());
+                          setQuickLeaveForm({
+                            employeeId: employees.length > 0 ? employees[0].id.toString() : '',
+                            days: 1,
+                            type: 'Annual Leave'
+                          });
                           setShowQuickLeaveModal(true);
                         }}
                         className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"

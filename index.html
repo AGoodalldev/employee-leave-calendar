@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee Leave Calendar</title>
+    <title>Atkin Guitars Leave Calendar</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -26,7 +26,7 @@
 </head>
 <body>
     <div id="root">
-        <div class="loading">Loading Employee Leave Calendar...</div>
+        <div class="loading">Loading Atkin Guitars Leave Calendar...</div>
     </div>
 
     <script type="text/babel">
@@ -93,29 +93,29 @@
             {
               id: 1,
               name: 'Sarah Johnson',
-              department: 'Engineering',
+              department: 'Workshop',
               totalLeave: 200,
               usedLeave: 64,
               avatar: 'SJ',
-              color: '#3B82F6'
+              color: '#8B4513'
             },
             {
               id: 2,
               name: 'Michael Chen',
-              department: 'Marketing',
+              department: 'Finishing',
               totalLeave: 160,
               usedLeave: 32,
               avatar: 'MC',
-              color: '#10B981'
+              color: '#D2691E'
             },
             {
               id: 3,
               name: 'Emma Davis',
-              department: 'HR',
+              department: 'Administration',
               totalLeave: 180,
               usedLeave: 96,
               avatar: 'ED',
-              color: '#F59E0B'
+              color: '#CD853F'
             },
             {
               id: 4,
@@ -124,7 +124,7 @@
               totalLeave: 200,
               usedLeave: 48,
               avatar: 'JW',
-              color: '#EF4444'
+              color: '#A0522D'
             }
           ]);
 
@@ -159,8 +159,8 @@
           ]);
 
           const [companyBranding] = useState({
-            companyName: 'Your Company',
-            primaryColor: '#3B82F6',
+            companyName: 'Atkin Guitars',
+            primaryColor: '#8B4513',
             logo: null
           });
 
@@ -227,7 +227,7 @@
           };
 
           return (
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-amber-50">
               <div className="bg-white shadow-sm border-b">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                   <div className="flex items-center justify-between flex-wrap gap-4">
@@ -246,14 +246,14 @@
                           placeholder="Search employees..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                         />
                       </div>
                       
                       <select
                         value={selectedEmployee}
                         onChange={(e) => setSelectedEmployee(e.target.value)}
-                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                       >
                         <option value="all">All Employees</option>
                         {employees.map(emp => (
@@ -261,7 +261,7 @@
                         ))}
                       </select>
                       
-                      <div className="flex bg-gray-100 rounded-lg p-1">
+                      <div className="flex bg-amber-100 rounded-lg p-1">
                         {['week', 'month', 'year'].map(mode => (
                           <button
                             key={mode}
@@ -277,7 +277,7 @@
                         ))}
                       </div>
                       
-                      <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                      <button className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-colors" style={{ backgroundColor: companyBranding.primaryColor }}>
                         <Plus className="h-4 w-4" />
                         <span>Add Leave</span>
                       </button>
@@ -409,10 +409,10 @@
                                 key={index}
                                 className={`min-h-[96px] p-2 border border-gray-200 hover:bg-gray-50 transition-colors ${
                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                                } ${isToday ? 'bg-blue-50 border-blue-200' : ''}`}
+                                } ${isToday ? 'bg-amber-50 border-amber-200' : ''}`}
                               >
                                 <div className={`text-sm font-medium mb-1 ${
-                                  isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                                  isToday ? 'text-amber-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
                                 }`}>
                                   {date.getDate()}
                                 </div>
@@ -447,7 +447,7 @@
                             <p className="text-sm font-medium text-gray-600">Total Leave Requests</p>
                             <p className="text-2xl font-bold text-gray-900">{leaveRequests.length}</p>
                           </div>
-                          <Clock className="h-8 w-8 text-blue-500" />
+                          <Clock className="h-8 w-8" style={{ color: companyBranding.primaryColor }} />
                         </div>
                       </div>
                       
@@ -500,7 +500,7 @@
                         <input
                           type="text"
                           defaultValue={companyBranding.companyName}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                         />
                       </div>
                       
@@ -524,7 +524,8 @@
                         </button>
                         <button 
                           onClick={() => setShowSettings(false)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-colors"
+                          style={{ backgroundColor: companyBranding.primaryColor }}
                         >
                           Save Changes
                         </button>

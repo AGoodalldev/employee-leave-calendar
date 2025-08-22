@@ -474,25 +474,15 @@
                     )
                   ),
                   
-                  currentView === 'calendar' && React.createElement('div', {className: "flex items-center space-x-4"},
-                    React.createElement('div', {className: "flex bg-gray-100 rounded-lg p-1"},
-                      ...['week', 'month', 'year'].map(mode =>
-                        React.createElement('button', {
-                          key: mode,
-                          onClick: () => setViewMode(mode),
-                          className: `px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${
-                            viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                          }`
-                        }, mode)
-                      )
-                    ),
-                    
-                    React.createElement('button', {
-                      onClick: () => openEmployeeModal(),
-                      className: "flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    },
-                      React.createElement(Icon, {name: "userAdd", className: "h-4 w-4"}),
-                      React.createElement('span', null, "Add Employee")
+                  currentView === 'calendar' && React.createElement('div', {className: "flex bg-gray-100 rounded-lg p-1"},
+                    ...['week', 'month', 'year'].map(mode =>
+                      React.createElement('button', {
+                        key: mode,
+                        onClick: () => setViewMode(mode),
+                        className: `px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${
+                          viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                        }`
+                      }, mode)
                     )
                   )
                 )

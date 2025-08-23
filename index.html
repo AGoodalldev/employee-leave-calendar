@@ -97,7 +97,7 @@
         chevronLeft: "M15 19l-7-7 7-7",
         userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
         home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756.426-1.756 2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
         factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
       };
       return (
@@ -227,7 +227,7 @@
         if (!this.db) {
           const arr = await this.fetchEmployees();
           const i = arr.findIndex(e => e.id === emp.id);
-        if (i >= 0) arr[i] = emp; else arr.push(emp);
+          if (i >= 0) arr[i] = emp; else arr.push(emp);
           localStorage.setItem('atkin_employees', JSON.stringify(arr));
           return;
         }
@@ -248,7 +248,7 @@
       async createLeave(leave) {
         if (!this.db) {
           const arr = await this.fetchLeaveRequests();
-          arr.push({ ...leave, id: `local-${Date.now()}` });
+          arr.push({ ...leave, id: `local-{Date.now()}` });
           localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
           return;
         }
@@ -398,6 +398,35 @@
         return d;
       };
 
+      // iterate date by date (inclusive)
+      const eachDate = (start, end) => {
+        const out = [];
+        const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+        for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) out.push(new Date(d));
+        return out;
+      };
+
+      // compute used hours for an employee in a given calendar year from leave records
+      const computeUsedHoursForEmployee = (empId, year = new Date().getFullYear()) => {
+        let hours = 0;
+        const empLeaves = leaveRequests.filter(l => l.employeeId === empId && l.type !== 'In Lieu');
+        for (const l of empLeaves) {
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+          // Hours leave (non-multiple of 8) counted only on its start day if that day is in the year
+          if (l.hours % 8 !== 0) {
+            if (s.getFullYear() === year && isWorkingDay(s)) hours += l.hours;
+          } else {
+            // Day-based leave: count 8h for each working day in [s,e] that lies within the target year
+            for (const d of eachDate(s, e)) {
+              if (isWorkingDay(d) && d.getFullYear() === year) hours += 8;
+            }
+          }
+        }
+        return hours;
+      };
+
       // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: "",
@@ -461,7 +490,6 @@
         }));
 
         if (!isWorkingDay(date)) {
-          // separately show bank holiday label (weekends just get grey background)
           if (isBankHolidayDate(date)) {
             const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
             res.push({
@@ -469,7 +497,7 @@
               type: 'Bank Holiday',
               status: 'bankholiday',
               isBankHoliday: true,
-              name: bh.name
+              name: bh?.name || 'Bank Holiday'
             });
           }
         }
@@ -477,7 +505,7 @@
         return res;
       };
 
-      // ✅ ADDED: status → badge colors (fixes ReferenceError)
+      // badge colors
       const getStatusColor = (status) => {
         switch (status) {
           case 'approved':    return 'bg-green-100 text-green-800';
@@ -515,7 +543,6 @@
 
       // ---------- ACTIONS ----------
       const saveQuickLeave = async () => {
-        // basic validation
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
           return;
@@ -532,9 +559,7 @@
         let start = nextWorkingDay(new Date(selectedDate));
         let end   = new Date(start);
 
-        if (isHours) {
-          // hours stay on the same (next working) day
-        } else {
+        if (!isHours) {
           // days: skip weekends + bank holidays
           end = addWorkingDays(start, n);
         }
@@ -550,17 +575,8 @@
           hours: totalHours
         };
 
-        // Optimistic UI
+        // Optimistic UI (no denormalised usedLeave changes)
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
-
-        if (quickLeaveForm.type !== 'In Lieu') {
-          const changed = employees.find(e => e.id === newLeave.employeeId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
-            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-            await dbApi.upsertEmployee(updated);
-          }
-        }
 
         await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
@@ -804,10 +820,6 @@
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          if (leave.type !== 'In Lieu') {
-                                            const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
-                                          }
                                           addNotification('Leave removed', 'success');
                                         }
                                       }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
@@ -924,9 +936,10 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
-                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
+                    const nowYear = new Date().getFullYear();
+                    const usedHoursThisYear = computeUsedHoursForEmployee(employee.id, nowYear);
+                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHoursThisYear);
+                    const usagePercentage = employee.totalLeave ? (usedHoursThisYear / employee.totalLeave) * 100 : 0;
 
                     return (
                       <div key={employee.id}
@@ -955,28 +968,15 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Used {nowYear}:</span><p className="font-medium">{formatHours(usedHoursThisYear)}</p></div>
+                            <div><span className="text-gray-600">Remaining {nowYear}:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${Math.min(100, usagePercentage)}%`, backgroundColor: employee.color }} />
                           </div>
-                          {recentLeaves.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Leave</h4>
-                              <div className="space-y-1">
-                                {recentLeaves.map(leave => (
-                                  <div key={leave.id} className="flex justify-between items-center text-xs">
-                                    <span className={`px-2 py-1 rounded ${getStatusColor(leave.status)}`}>{leave.type}</span>
-                                    <span className="text-gray-500">{new Date(leave.startDate).toLocaleDateString()}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     );
@@ -1025,11 +1025,12 @@
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Used Leave (hours)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Used Leave (legacy)</label>
                     <input type="number" value={employeeForm.usedLeave}
                            onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                            min="0" />
+                    <p className="text-xs text-gray-500 mt-1">Note: Display now derives “Used” from this year’s bookings.</p>
                   </div>
 
                   <div>

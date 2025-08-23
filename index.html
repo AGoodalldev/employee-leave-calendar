@@ -227,7 +227,7 @@
         if (!this.db) {
           const arr = await this.fetchEmployees();
           const i = arr.findIndex(e => e.id === emp.id);
-          if (i >= 0) arr[i] = emp; else arr.push(emp);
+        if (i >= 0) arr[i] = emp; else arr.push(emp);
           localStorage.setItem('atkin_employees', JSON.stringify(arr));
           return;
         }
@@ -248,7 +248,7 @@
       async createLeave(leave) {
         if (!this.db) {
           const arr = await this.fetchLeaveRequests();
-          arr.push({ ...leave, id: `local-{Date.now()}` });
+          arr.push({ ...leave, id: `local-${Date.now()}` });
           localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
           return;
         }
@@ -414,17 +414,33 @@
         for (const l of empLeaves) {
           const s = new Date(l.startDate);
           const e = new Date(l.endDate);
-          // Hours leave (non-multiple of 8) counted only on its start day if that day is in the year
           if (l.hours % 8 !== 0) {
             if (s.getFullYear() === year && isWorkingDay(s)) hours += l.hours;
           } else {
-            // Day-based leave: count 8h for each working day in [s,e] that lies within the target year
             for (const d of eachDate(s, e)) {
               if (isWorkingDay(d) && d.getFullYear() === year) hours += 8;
             }
           }
         }
         return hours;
+      };
+
+      // helpers for "Next leave" on team card
+      const startOfToday = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+      const workingDaysBetween = (s, e) => eachDate(s, e).filter(isWorkingDay).length;
+      const nextLeaveForEmployee = (empId) => {
+        const today = startOfToday();
+        const upcoming = leaveRequests
+          .filter(l => l.employeeId === empId && new Date(l.startDate) >= today)
+          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        return upcoming[0] || null;
+      };
+      const formatLeaveAmount = (leave) => {
+        if (!leave) return '';
+        const s = new Date(leave.startDate);
+        const e = new Date(leave.endDate);
+        if ((leave.hours || 0) % 8 !== 0) return `${leave.hours}h`;
+        return `${workingDaysBetween(s, e)}d`;
       };
 
       // Quick leave form with placeholders
@@ -941,6 +957,12 @@
                     const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHoursThisYear);
                     const usagePercentage = employee.totalLeave ? (usedHoursThisYear / employee.totalLeave) * 100 : 0;
 
+                    // NEW: Next leave info
+                    const nxt = nextLeaveForEmployee(employee.id);
+                    const nextLabel = nxt
+                      ? `${new Date(nxt.startDate).toLocaleDateString()} • ${formatLeaveAmount(nxt)}`
+                      : '—';
+
                     return (
                       <div key={employee.id}
                            className="bg-gray-50 rounded-lg p-6 hover:shadow-md transition-shadow relative group">
@@ -973,9 +995,15 @@
                             <div><span className="text-gray-600">Remaining {nowYear}:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
+
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
                                  style={{ width: `${Math.min(100, usagePercentage)}%`, backgroundColor: employee.color }} />
+                          </div>
+
+                          <div className="mt-3 text-sm flex items-center justify-between">
+                            <span className="text-gray-600">Next leave:</span>
+                            <span className="font-medium">{nextLabel}</span>
                           </div>
                         </div>
                       </div>

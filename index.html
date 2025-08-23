@@ -347,7 +347,7 @@
         return hs;
       };
 
-      // Quick Leave form — start BLANK (placeholders show)
+      // Quick Leave form — start BLANK
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: '',
         duration: '', // D:n = days, H:n = hours
@@ -391,26 +391,6 @@
       };
       const getGridColumns = () => viewMode==='year' ? 'grid-cols-4' : 'grid-cols-7';
 
-      const getLeaveForDate = (date) => {
-        const regs = leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
-        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
-        const bhList = getBankHolidays(date.getFullYear());
-        const bh = bhList.find(h => h.date.toDateString() === date.toDateString());
-        const res = [...regs];
-        shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
-        if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
-        return res;
-      };
-      const getStatusColor = (status) => {
-        switch(status){
-          case 'approved': return 'bg-green-100 text-green-800';
-          case 'pending': return 'bg-yellow-100 text-yellow-800';
-          case 'shutdown': return 'bg-red-100 text-red-800';
-          case 'bankholiday': return 'bg-purple-100 text-purple-800';
-          default: return 'bg-gray-100 text-gray-800';
-        }
-      };
-
       // ------ Helpers for business-day logic and duration parsing ------
       const isWeekendDate = (d) => {
         const dow = d.getDay();
@@ -437,7 +417,43 @@
         return { unit, n, hours, days };
       };
 
-      // ---------- INITIALISE (wait for auth, then realtime listeners or local fallback) ----------
+      const getBankHolidayForDate = (date) => {
+        const bhList = getBankHolidays(date.getFullYear());
+        return bhList.find(h => h.date.toDateString() === date.toDateString());
+      };
+
+      // ---- Leave on a specific date (now hides regular leave on weekends) ----
+      const getLeaveForDate = (date) => {
+        const isWeekend = isWeekendDate(date);
+
+        // Regular leaves that span this date
+        const regs = isWeekend
+          ? [] // hide employee leave on weekend cells
+          : leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
+
+        // Shutdowns that span this date
+        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
+
+        // Bank holiday on this date
+        const bh = getBankHolidayForDate(date);
+
+        const res = [...regs];
+        shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
+        if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
+        return res;
+      };
+
+      const getStatusColor = (status) => {
+        switch(status){
+          case 'approved': return 'bg-green-100 text-green-800';
+          case 'pending': return 'bg-yellow-100 text-yellow-800';
+          case 'shutdown': return 'bg-red-100 text-red-800';
+          case 'bankholiday': return 'bg-purple-100 text-purple-800';
+          default: return 'bg-gray-100 text-gray-800';
+        }
+      };
+
+      // ---------- INITIALISE ----------
       useEffect(() => {
         let unsubEmp = null, unsubLeave = null, unsubShut = null;
 
@@ -506,7 +522,7 @@
           }
         }
 
-        await dbApi.createLeave(newLeave);  // listeners will sync real doc
+        await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
         addNotification('Leave added', 'success');
       };
@@ -713,7 +729,7 @@
                         {days.map((date, idx) => {
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekendCell = date.getDay()===0 || date.getDay()===6;
+                          const isWeekendCell = isWeekendDate(date);
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
@@ -723,15 +739,26 @@
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
-                                {isCurrentMonth && (
-                                  <span onClick={() => {
-                                    setSelectedDate(date);
-                                    // keep blanks so user must choose
-                                    setQuickLeaveForm({ employeeId: '', duration: '', type: '' });
-                                    setShowQuickLeaveModal(true);
-                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
+
+                                {/* Hide/disable + on weekends */}
+                                {isCurrentMonth && !isWeekendCell && (
+                                  <span
+                                    onClick={() => {
+                                      setSelectedDate(date);
+                                      setQuickLeaveForm({ employeeId: '', duration: '', type: '' });
+                                      setShowQuickLeaveModal(true);
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer"
+                                  >+</span>
+                                )}
+                                {isCurrentMonth && isWeekendCell && (
+                                  <span
+                                    title="Weekends disabled for quick add"
+                                    className="opacity-0 group-hover:opacity-60 w-5 h-5 rounded-full bg-gray-300 text-white flex items-center justify-center text-xs cursor-not-allowed"
+                                  >+</span>
                                 )}
                               </div>
+
                               <div className="space-y-1">
                                 {dayLeaves.map(leave => {
                                   if (leave.isShutdown) {
@@ -740,6 +767,7 @@
                                   if (leave.isBankHoliday) {
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
+                                  // Regular leaves won't appear here on weekends due to getLeaveForDate filtering
                                   const employee = employees.find(e => e.id === leave.employeeId);
                                   if (!employee) return null;
                                   return (
@@ -774,7 +802,7 @@
 
           {/* Settings View */}
           {currentView === 'settings' && (
-            <div className="max-w-4xl mx-auto px-6 py-8">
+            <div className="max-w-4xl mx_auto px-6 py-8">
               <div className="bg-white rounded-xl shadow-sm border p-6">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">Workshop Settings</h2>
@@ -802,7 +830,7 @@
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
+                        <label className="block text_sm font-medium text-gray-700 mb-2">End Date *</label>
                         <input type="date" value={shutdownForm.endDate}
                                onChange={(e) => setShutdownForm(prev => ({...prev, endDate: e.target.value}))}
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
@@ -934,7 +962,7 @@
           {showEmployeeModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify_between mb-4">
                   <h3 className="text-lg font-semibold">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</h3>
                   <button onClick={() => setShowEmployeeModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                 </div>

@@ -30,22 +30,21 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase v12 ESM init with ready() -->
+  <!-- Firebase v12 ESM init with auth + realtime exposure -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
     import {
       getFirestore, enableIndexedDbPersistence,
       collection, doc, getDocs, getDoc, setDoc, deleteDoc,
-      writeBatch, query, orderBy, Timestamp
+      writeBatch, query, orderBy, Timestamp, onSnapshot
     } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
-    // Your Firebase project (safe to be public)
     const firebaseConfig = {
       apiKey: "AIzaSyD8zcVQBrK_Q_WQZKa856u2ka901eakX0A",
       authDomain: "atkin-guitars-94dd8.firebaseapp.com",
       projectId: "atkin-guitars-94dd8",
-      storageBucket: "atkin-guitars-94dd8.firebasestorage.app",
+      storageBucket: "atkin-guitars-94dd8.appspot.com",
       messagingSenderId: "501290829079",
       appId: "1:501290829079:web:e6d21711bccb47654ae352"
     };
@@ -54,22 +53,25 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Offline-first
-    enableIndexedDbPersistence(db).catch(() => { /* already enabled/unsupported */ });
+    // Offline-first cache (Firestore will warn about future deprecation; OK for now)
+    enableIndexedDbPersistence(db).catch(() => {});
 
-    // Ensure authenticated (satisfies rules: request.auth != null)
+    // Wait for anonymous auth so rules (request.auth != null) pass
     const ready = new Promise((resolve) => {
       let resolved = false;
       onAuthStateChanged(auth, (user) => {
         if (user && !resolved) { resolved = true; resolve(user); }
       });
-      signInAnonymously(auth).catch(console.error);
+      signInAnonymously(auth).catch((err) => {
+        console.error("Anon sign-in failed:", err);
+        if (!resolved) resolve(null); // allow local fallback
+      });
     });
 
-    // Expose to Babel script
+    // Expose to the Babel script
     window.__fb = {
       app, auth, db, ready,
-      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp }
+      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
     };
   </script>
 
@@ -102,14 +104,14 @@
       );
     };
 
-    // Database API using Firebase via window.__fb
+    // ---------- Firestore-backed Database API (realtime + per-doc CRUD) ----------
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
         this.fb = window.__fb || {};
         this.db = this.fb.db;
         this.api = this.fb.api || {};
-        this.isOnline = navigator.onLine;
+        this.unsubs = { employees: null, leaves: null, shutdowns: null };
       }
 
       _tsToDate(v) {
@@ -120,6 +122,49 @@
       }
       _date(v){ return v instanceof Date ? v : new Date(v); }
 
+      // ----- REALTIME SUBSCRIPTIONS -----
+      subscribeEmployees(setter) {
+        if (!this.db) return () => {};
+        const { collection, query, orderBy, onSnapshot } = this.api;
+        const q = query(collection(this.db, "employees"), orderBy("name"));
+        this.unsubs.employees?.();
+        this.unsubs.employees = onSnapshot(q, (snap) => {
+          setter(snap.docs.map(d => d.data()));
+        });
+        return this.unsubs.employees;
+      }
+
+      subscribeLeaveRequests(setter) {
+        if (!this.db) return () => {};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "leave_requests");
+        this.unsubs.leaves?.();
+        this.unsubs.leaves = onSnapshot(ref, (snap) => {
+          const rows = snap.docs.map(d => {
+            const v = d.data();
+            return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+          });
+          setter(rows);
+        });
+        return this.unsubs.leaves;
+      }
+
+      subscribeWorkshopShutdowns(setter) {
+        if (!this.db) return () => {};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "workshop_shutdowns");
+        this.unsubs.shutdowns?.();
+        this.unsubs.shutdowns = onSnapshot(ref, (snap) => {
+          const rows = snap.docs.map(d => {
+            const v = d.data();
+            return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+          });
+          setter(rows);
+        });
+        return this.unsubs.shutdowns;
+      }
+
+      // ----- LOCAL FALLBACK FETCHES -----
       async fetchEmployees() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_employees');
@@ -137,9 +182,7 @@
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
-          if (stored) {
-            return JSON.parse(stored).map(req => ({ ...req, startDate: new Date(req.startDate), endDate: new Date(req.endDate) }));
-          }
+          if (stored) return JSON.parse(stored).map(r => ({...r, startDate:new Date(r.startDate), endDate:new Date(r.endDate)}));
           return [{ id: 1, employeeId: 1, startDate: new Date(2025,7,25), endDate: new Date(2025,7,29), type: 'Annual Leave', status: 'approved', hours: 40 }];
         }
         const { collection, getDocs } = this.api;
@@ -153,9 +196,7 @@
       async fetchWorkshopShutdowns() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_workshop_shutdowns');
-          if (stored) {
-            return JSON.parse(stored).map(s => ({ ...s, startDate: new Date(s.startDate), endDate: new Date(s.endDate) }));
-          }
+          if (stored) return JSON.parse(stored).map(s => ({...s, startDate:new Date(s.startDate), endDate:new Date(s.endDate)}));
           return [];
         }
         const { collection, getDocs } = this.api;
@@ -166,60 +207,75 @@
         });
       }
 
-      async saveData(type, data) {
+      // ----- PER-DOC WRITES -----
+      async upsertEmployee(emp) {
         if (!this.db) {
-          if (type === 'leave_requests') {
-            const serialized = data.map(req => ({ ...req, startDate: req.startDate.toISOString(), endDate: req.endDate.toISOString() }));
-            localStorage.setItem('atkin_leave_requests', JSON.stringify(serialized));
-          } else {
-            localStorage.setItem('atkin_employees', JSON.stringify(data));
-          }
+          const arr = await this.fetchEmployees();
+          const i = arr.findIndex(e => e.id === emp.id);
+          if (i >= 0) arr[i] = emp; else arr.push(emp);
+          localStorage.setItem('atkin_employees', JSON.stringify(arr));
           return;
         }
-        const { writeBatch, doc } = this.api;
-        const batch = writeBatch(this.db);
-
-        if (type === 'leave_requests') {
-          data.forEach(req => {
-            const ref = doc(this.db, "leave_requests", String(req.id));
-            batch.set(ref, { ...req, startDate: this._date(req.startDate), endDate: this._date(req.endDate) }, { merge: true });
-          });
-        } else if (type === 'employees') {
-          data.forEach(emp => {
-            const ref = doc(this.db, "employees", String(emp.id));
-            batch.set(ref, { ...emp }, { merge: true });
-          });
-        }
-        await batch.commit();
-      }
-
-      async saveWorkshopShutdowns(shutdowns) {
-        if (!this.db) {
-          const serialized = shutdowns.map(s => ({ ...s, startDate: s.startDate.toISOString(), endDate: s.endDate.toISOString() }));
-          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(serialized));
-          return;
-        }
-        const { writeBatch, doc } = this.api;
-        const batch = writeBatch(this.db);
-        shutdowns.forEach(s => {
-          const ref = doc(this.db, "workshop_shutdowns", String(s.id));
-          batch.set(ref, { ...s, startDate: this._date(s.startDate), endDate: this._date(s.endDate) }, { merge: true });
-        });
-        await batch.commit();
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
       }
 
       async deleteEmployee(id) {
-        if (!this.db) return;
+        if (!this.db) {
+          const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
+          localStorage.setItem('atkin_employees', JSON.stringify(arr));
+          return;
+        }
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "employees", String(id)));
       }
-      async deleteLeaveRequest(id) {
+
+      async createLeave(leave) {
+        if (!this.db) {
+          const arr = await this.fetchLeaveRequests();
+          arr.push({ ...leave, id: `local-${Date.now()}` });
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+          return;
+        }
+        const { collection, doc, setDoc } = this.api;
+        const ref = doc(collection(this.db, "leave_requests"));
+        await setDoc(ref, { ...leave, id: ref.id });
+      }
+
+      async updateLeave(leaveId, partial) {
         if (!this.db) return;
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
+      }
+
+      async deleteLeaveRequest(id) {
+        if (!this.db) {
+          const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+          return;
+        }
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "leave_requests", String(id)));
       }
+
+      async createShutdown(s) {
+        if (!this.db) {
+          const arr = await this.fetchWorkshopShutdowns();
+          arr.push({ ...s, id: `local-${Date.now()}` });
+          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+          return;
+        }
+        const { collection, doc, setDoc } = this.api;
+        const ref = doc(collection(this.db, "workshop_shutdowns"));
+        await setDoc(ref, { ...s, id: ref.id });
+      }
+
       async deleteWorkshopShutdown(id) {
-        if (!this.db) return;
+        if (!this.db) {
+          const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
+          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+          return;
+        }
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
       }
@@ -233,7 +289,7 @@
       const [showEmployeeModal, setShowEmployeeModal] = useState(false);
       const [selectedDate, setSelectedDate] = useState(null);
       const [editingEmployee, setEditingEmployee] = useState(null);
-      const [connectionStatus, setConnectionStatus] = useState(window.__fb?.db ? 'connected' : 'disconnected');
+      const [connectionStatus, setConnectionStatus] = useState('connected');
       const [showConnectionIndicator, setShowConnectionIndicator] = useState(true);
       const [notifications, setNotifications] = useState([]);
       const [employees, setEmployees] = useState([]);
@@ -255,53 +311,40 @@
 
       const [dbApi] = useState(() => new DatabaseAPI(addNotification));
 
-      // Online/offline
+      // Online/offline indicator
       useEffect(() => {
         const onOnline = () => setConnectionStatus('connected');
         const onOffline = () => setConnectionStatus('disconnected');
         window.addEventListener('online', onOnline);
         window.addEventListener('offline', onOffline);
-
-        if (!window.__fb?.db) {
-          addNotification('Using offline mode (localStorage). Add Firebase config for cloud sync.', 'error');
-        }
         return () => {
           window.removeEventListener('online', onOnline);
           window.removeEventListener('offline', onOffline);
         };
-      }, [addNotification]);
+      }, []);
 
       // Bank holidays helpers
       const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const getEasterDate = (year) => {
-        const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), n = Math.floor((h + l - 7 * m + 114) / 31), p = (h + l - 7 * m + 114) % 31;
-        return new Date(year, n - 1, p + 1);
+        const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
+        return new Date(year,n-1,p+1);
       };
       const getFirstMondayOfMonth = (year, month) => {
-        const firstDay = new Date(year, month, 1);
-        const dayOfWeek = firstDay.getDay();
-        const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-        return new Date(year, month, 1 + daysUntilMonday);
+        const firstDay=new Date(year,month,1), dow=firstDay.getDay(), daysUntilMonday=dow===0?1:8-dow;
+        return new Date(year,month,1+daysUntilMonday);
       };
       const getLastMondayOfMonth = (year, month) => {
-        const lastDay = new Date(year, month + 1, 0);
-        const dayOfWeek = lastDay.getDay();
-        const daysToSubtract = dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        return new Date(year, month, lastDay.getDate() - daysToSubtract);
+        const lastDay=new Date(year,month+1,0), dow=lastDay.getDay(), sub=dow===1?0:dow===0?6:dow-1;
+        return new Date(year,month,lastDay.getDate()-sub);
       };
       const getBankHolidays = (year) => {
-        const hs = [];
-        hs.push({ name: "New Year's Day", date: new Date(year,0,1) });
-        const easter = getEasterDate(year);
-        const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate()-2);
-        const easterMon = new Date(easter); easterMon.setDate(easter.getDate()+1);
-        hs.push({ name:"Good Friday", date:goodFriday });
-        hs.push({ name:"Easter Monday", date:easterMon });
-        hs.push({ name:"Early May Bank Holiday", date:getFirstMondayOfMonth(year,4) });
-        hs.push({ name:"Spring Bank Holiday", date:getLastMondayOfMonth(year,4) });
-        hs.push({ name:"Summer Bank Holiday", date:getLastMondayOfMonth(year,7) });
-        hs.push({ name:"Christmas Day", date:new Date(year,11,25) });
-        hs.push({ name:"Boxing Day", date:new Date(year,11,26) });
+        const hs=[]; hs.push({name:"New Year's Day",date:new Date(year,0,1)});
+        const easter=getEasterDate(year), gf=new Date(easter), em=new Date(easter); gf.setDate(easter.getDate()-2); em.setDate(easter.getDate()+1);
+        hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em});
+        hs.push({name:"Early May Bank Holiday",date:getFirstMondayOfMonth(year,4)});
+        hs.push({name:"Spring Bank Holiday",date:getLastMondayOfMonth(year,4)});
+        hs.push({name:"Summer Bank Holiday",date:getLastMondayOfMonth(year,7)});
+        hs.push({name:"Christmas Day",date:new Date(year,11,25)}); hs.push({name:"Boxing Day",date:new Date(year,11,26)});
         return hs;
       };
 
@@ -309,28 +352,25 @@
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
 
-      const formatHours = (h) => { const d = Math.floor(h/8), r = h%8; return r>0 ? `${d}d ${r}h` : `${d}d`; };
+      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
       const getMonthDays = () => {
-        const y = currentDate.getFullYear(), m = currentDate.getMonth();
-        const first = new Date(y,m,1);
-        const start = new Date(first); start.setDate(start.getDate() - first.getDay());
-        const days = [];
-        for (let i=0;i<42;i++){ days.push(new Date(start)); start.setDate(start.getDate()+1); }
-        return days;
+        const y=currentDate.getFullYear(), m=currentDate.getMonth();
+        const first=new Date(y,m,1); const start=new Date(first); start.setDate(start.getDate()-first.getDay());
+        return Array.from({length:42},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
       };
       const getWeekDays = () => {
-        const start = new Date(currentDate); const day = start.getDay(); start.setDate(currentDate.getDate()-day);
-        return Array.from({length:7}, (_,i)=>{ const d=new Date(start); d.setDate(start.getDate()+i); return d; });
+        const start=new Date(currentDate); const day=start.getDay(); start.setDate(currentDate.getDate()-day);
+        return Array.from({length:7},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
       };
-      const getYearMonths = () => Array.from({length:12}, (_,i)=>new Date(currentDate.getFullYear(), i, 1));
-      const getCalendarDays = () => viewMode==='week' ? getWeekDays() : (viewMode==='year' ? getYearMonths() : getMonthDays());
+      const getYearMonths = () => Array.from({length:12},(_,i)=>new Date(currentDate.getFullYear(), i, 1));
+      const getCalendarDays = () => viewMode==='week'?getWeekDays():(viewMode==='year'?getYearMonths():getMonthDays());
       const navigateCalendar = (dir) => setCurrentDate(prev => {
         const nd=new Date(prev);
-        if (viewMode==='week') nd.setDate(prev.getDate() + dir*7);
-        else if (viewMode==='year') nd.setFullYear(prev.getFullYear() + dir);
-        else nd.setMonth(prev.getMonth() + dir);
+        if (viewMode==='week') nd.setDate(prev.getDate()+dir*7);
+        else if (viewMode==='year') nd.setFullYear(prev.getFullYear()+dir);
+        else nd.setMonth(prev.getMonth()+dir);
         return nd;
       });
       const getViewTitle = () => {
@@ -366,37 +406,62 @@
         }
       };
 
-      // Sync data (Firestore or localStorage)
-      const syncData = async () => {
-        await dbApi.saveData('employees', employees);
-        await dbApi.saveData('leave_requests', leaveRequests);
-        await dbApi.saveWorkshopShutdowns(workshopShutdowns);
-        addNotification(window.__fb?.db ? 'Synced to cloud (Firestore)' : 'Saved locally', 'success');
-      };
+      // ---------- INITIALISE (wait for auth, then realtime listeners or local fallback) ----------
+      useEffect(() => {
+        let unsubEmp = null, unsubLeave = null, unsubShut = null;
 
+        const init = async () => {
+          if (window.__fb?.ready) { await window.__fb.ready; }
+          if (window.__fb?.db) {
+            unsubEmp  = dbApi.subscribeEmployees(setEmployees);
+            unsubLeave = dbApi.subscribeLeaveRequests(setLeaveRequests);
+            unsubShut = dbApi.subscribeWorkshopShutdowns(setWorkshopShutdowns);
+          } else {
+            const [e,l,s] = await Promise.all([
+              dbApi.fetchEmployees(), dbApi.fetchLeaveRequests(), dbApi.fetchWorkshopShutdowns()
+            ]);
+            setEmployees(e); setLeaveRequests(l); setWorkshopShutdowns(s);
+            addNotification('Running in local (offline) mode.', 'error');
+          }
+          setIsLoading(false);
+          setTimeout(() => setShowConnectionIndicator(false), 3000);
+        };
+
+        init();
+        return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
+      }, [dbApi]);
+
+      // ---------- ACTIONS ----------
       const saveQuickLeave = async () => {
         const days = parseInt(quickLeaveForm.days) || 1;
         const totalHours = days * 8;
-        const employee = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
+        const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        const newLeave = {
-          id: Math.max(0, ...leaveRequests.map(r => r.id)) + 1,
-          employeeId: parseInt(quickLeaveForm.employeeId),
-          startDate: new Date(selectedDate),
-          endDate: new Date(selectedDate),
-          type: quickLeaveForm.type,
-          status: 'approved',
-          hours: totalHours
-        };
-        if (days > 1) newLeave.endDate.setDate(newLeave.startDate.getDate() + days - 1);
+        const start = new Date(selectedDate);
+        const end = new Date(selectedDate);
+        if (days > 1) end.setDate(start.getDate() + days - 1);
 
-        setLeaveRequests(prev => [...prev, newLeave]);
+        const newLeave = {
+          employeeId: parseInt(quickLeaveForm.employeeId),
+          startDate: start, endDate: end,
+          type: quickLeaveForm.type, status: 'approved', hours: totalHours
+        };
+
+        // Optimistic UI
+        setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
         if (quickLeaveForm.type !== 'In Lieu') {
-          setEmployees(prev => prev.map(e => e.id === newLeave.employeeId ? { ...e, usedLeave: e.usedLeave + totalHours } : e));
+          const changed = employees.find(e => e.id === newLeave.employeeId);
+          if (changed) {
+            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
         }
-        await syncData();
+
+        await dbApi.createLeave(newLeave);  // listeners will sync real doc
         setShowQuickLeaveModal(false);
+        addNotification('Leave added', 'success');
       };
 
       const saveEmployee = async () => {
@@ -406,25 +471,23 @@
 
         if (editingEmployee) {
           const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
-          setEmployees(prev => prev.map(e => e.id === editingEmployee.id ? updated : e));
+          await dbApi.upsertEmployee(updated);
+          setShowEmployeeModal(false);
+          setEditingEmployee(null);
+          addNotification('Employee updated', 'success');
         } else {
-          const newEmp = {
-            id: Math.max(0, ...employees.map(e => e.id)) + 1,
-            name: employeeForm.name, department: employeeForm.department,
-            totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color
-          };
-          setEmployees(prev => [...prev, newEmp]);
+          const nextId = Math.max(0, ...employees.map(e => e.id||0)) + 1;
+          const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color };
+          await dbApi.upsertEmployee(newEmp);
+          setShowEmployeeModal(false);
+          addNotification('Employee added', 'success');
         }
-        await syncData();
-        setShowEmployeeModal(false);
-        setEditingEmployee(null);
       };
 
       const deleteEmployee = async (employeeId) => {
         if (!confirm('Are you sure you want to delete this employee?')) return;
-        setEmployees(prev => prev.filter(e => e.id !== employeeId));
         await dbApi.deleteEmployee(employeeId);
-        await syncData();
+        addNotification('Employee deleted', 'success');
       };
 
       const saveWorkshopShutdown = async () => {
@@ -433,21 +496,15 @@
         const endDate = new Date(shutdownForm.endDate);
         if (endDate < startDate) { addNotification('End date must be after start date', 'error'); return; }
 
-        const newS = {
-          id: Math.max(0, ...workshopShutdowns.map(s => s.id)) + 1,
-          name: shutdownForm.name, startDate, endDate, description: shutdownForm.description
-        };
-        setWorkshopShutdowns(prev => [...prev, newS]);
-        await syncData();
+        const newS = { name: shutdownForm.name, startDate, endDate, description: shutdownForm.description };
+        await dbApi.createShutdown(newS);
         setShutdownForm({ name:'', startDate:'', endDate:'', description:'' });
-        addNotification('Workshop shutdown added successfully', 'success');
+        addNotification('Workshop shutdown added', 'success');
       };
 
       const deleteWorkshopShutdown = async (shutdownId) => {
         if (!confirm('Are you sure you want to delete this workshop shutdown?')) return;
-        setWorkshopShutdowns(prev => prev.filter(s => s.id !== shutdownId));
         await dbApi.deleteWorkshopShutdown(shutdownId);
-        await syncData();
         addNotification('Workshop shutdown deleted', 'success');
       };
 
@@ -462,35 +519,6 @@
         setShowEmployeeModal(true);
       };
 
-      // INITIAL LOAD — wait for Firebase auth before fetching
-      useEffect(() => {
-        const loadData = async () => {
-          if (window.__fb?.ready) { await window.__fb.ready; }  // 👈 added line
-
-          const [employeesDataRaw, leaveRequestsData, shutdownsData] = await Promise.all([
-            dbApi.fetchEmployees(), dbApi.fetchLeaveRequests(), dbApi.fetchWorkshopShutdowns()
-          ]);
-
-          // Seed Firestore once if empty
-          let employeesData = employeesDataRaw;
-          if (window.__fb?.db && employeesData.length === 0) {
-            employeesData = [
-              { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
-              { id: 2, name: 'Michael Chen', department: 'Finishing', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
-              { id: 3, name: 'Emma Davis', department: 'Administration', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
-            ];
-            await dbApi.saveData('employees', employeesData);
-          }
-
-          setEmployees(employeesData);
-          setLeaveRequests(leaveRequestsData);
-          setWorkshopShutdowns(shutdownsData);
-          setIsLoading(false);
-          setTimeout(() => setShowConnectionIndicator(false), 3000);
-        };
-        loadData();
-      }, [dbApi]);
-
       if (isLoading) {
         return (
           <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -502,12 +530,7 @@
         );
       }
 
-      const days = (viewMode === 'week')
-        ? (() => { const s=new Date(currentDate); const d=s.getDay(); s.setDate(currentDate.getDate()-d); return Array.from({length:7},(_,i)=>new Date(s.getFullYear(),s.getMonth(),s.getDate()+i)); })()
-        : (viewMode === 'year'
-            ? Array.from({length:12},(_,i)=>new Date(currentDate.getFullYear(), i, 1))
-            : (() => { const y=currentDate.getFullYear(), m=currentDate.getMonth(); const f=new Date(y,m,1); const s=new Date(f); s.setDate(s.getDate()-f.getDay()); return Array.from({length:42},(_,i)=>new Date(s.getFullYear(),s.getMonth(),s.getDate()+i)); })()
-          );
+      const days = getCalendarDays();
 
       return (
         <div className="min-h-screen bg-gray-50">
@@ -583,7 +606,7 @@
             </div>
           </div>
 
-          {/* Calendar View */}
+          {/* Main Content - Calendar View */}
           {currentView === 'calendar' && (
             <div className="max-w-7xl mx-auto px-6 py-8">
               <div className="bg-white rounded-xl shadow-sm border">
@@ -598,16 +621,16 @@
                 <div className="p-6">
                   {viewMode === 'year' ? (
                     <div className={`grid ${getGridColumns()} gap-4`}>
-                      {days.map((month, idx) => {
-                        const monthLeaves = leaveRequests.filter(l => {
-                          const s = new Date(l.startDate);
-                          return s.getMonth()===month.getMonth() && s.getFullYear()===month.getFullYear();
+                      {getCalendarDays().map((month, idx) => {
+                        const monthLeaves = leaveRequests.filter(leave => {
+                          const s = new Date(leave.startDate);
+                          return s.getMonth() === month.getMonth() && s.getFullYear() === month.getFullYear();
                         });
                         const map = new Map();
-                        monthLeaves.forEach(l => {
-                          const id = l.employeeId;
-                          if (map.has(id)) map.get(id).totalDays += (l.hours/8);
-                          else map.set(id, { employeeId:id, status:l.status, totalDays:(l.hours/8) });
+                        monthLeaves.forEach(leave => {
+                          const id = leave.employeeId;
+                          if (map.has(id)) map.get(id).totalDays += (leave.hours/8);
+                          else map.set(id, { employeeId:id, status: leave.status, totalDays:(leave.hours/8) });
                         });
                         const unique = Array.from(map.values());
                         return (
@@ -658,7 +681,7 @@
                                     setSelectedDate(date);
                                     setQuickLeaveForm({ employeeId: employees.length>0 ? String(employees[0].id) : '1', days: 1, type: 'Annual Leave' });
                                     setShowQuickLeaveModal(true);
-                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer">+</span>
+                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
                                 )}
                               </div>
                               <div className="space-y-1">
@@ -676,12 +699,12 @@
                                       <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
-                                          setLeaveRequests(prev => prev.filter(r => r.id !== leave.id));
-                                          if (leave.type !== 'In Lieu') {
-                                            setEmployees(prev => prev.map(e => e.id === leave.employeeId ? { ...e, usedLeave: e.usedLeave - leave.hours } : e));
-                                          }
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          await syncData();
+                                          if (leave.type !== 'In Lieu') {
+                                            const changed = employees.find(e => e.id === leave.employeeId);
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                          }
+                                          addNotification('Leave removed', 'success');
                                         }
                                       }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
                                         <Icon name="x" className="h-2 w-2" />

@@ -36,8 +36,8 @@
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
     import {
       getFirestore, enableIndexedDbPersistence,
-      collection, doc, getDocs, getDoc, setDoc, deleteDoc,
-      writeBatch, query, orderBy, Timestamp, onSnapshot
+      collection, doc, getDocs, setDoc, deleteDoc,
+      query, orderBy, onSnapshot
     } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -53,7 +53,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Offline-first cache (Firestore will warn about future deprecation; OK for now)
+    // Offline-first cache
     enableIndexedDbPersistence(db).catch(() => {});
 
     // Wait for anonymous auth so rules (request.auth != null) pass
@@ -71,7 +71,7 @@
     // Expose to the Babel script
     window.__fb = {
       app, auth, db, ready,
-      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
+      api: { collection, doc, getDocs, setDoc, deleteDoc, query, orderBy, onSnapshot }
     };
   </script>
 
@@ -84,7 +84,6 @@
       const paths = {
         calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
         menu: "M4 6h16M4 12h16M4 18h16",
-        users: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
         userAdd: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
         edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
         trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
@@ -104,7 +103,7 @@
       );
     };
 
-    // ---------- Firestore-backed Database API (realtime + per-doc CRUD) ----------
+    // ---------- Firestore-backed Database API ----------
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
@@ -281,7 +280,7 @@
     }
 
     const LeaveCalendar = () => {
-      // State management
+      // State
       const [currentDate, setCurrentDate] = useState(new Date());
       const [viewMode, setViewMode] = useState('month');
       const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
@@ -422,7 +421,35 @@
         return bhList.find(h => h.date.toDateString() === date.toDateString());
       };
 
-      // ---- Leave on a specific date (now hides regular leave on weekends) ----
+      // Compute USED hours for given employee & calendar year (weekdays only for multi-day)
+      const computeUsedHoursForYear = (employeeId, year) => {
+        const rel = leaveRequests.filter(l =>
+          l.employeeId === employeeId &&
+          l.status === 'approved' &&
+          l.type !== 'In Lieu'
+        );
+        let total = 0;
+        for (const l of rel) {
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+
+          // Single-day (hours or 1 day)
+          if (s.toDateString() === e.toDateString()) {
+            if (s.getFullYear() === year) total += (l.hours || 0);
+            continue;
+          }
+
+          // Multi-day: count 8h for each weekday within range that falls in target year
+          const d = new Date(s);
+          while (d <= e) {
+            if (!isWeekendDate(d) && d.getFullYear() === year) total += 8;
+            d.setDate(d.getDate() + 1);
+          }
+        }
+        return total;
+      };
+
+      // ---- Leave on a specific date (hide regular leave on weekends) ----
       const getLeaveForDate = (date) => {
         const isWeekend = isWeekendDate(date);
 
@@ -511,12 +538,15 @@
           type: quickLeaveForm.type, status: 'approved', hours: dur.hours
         };
 
-        // Optimistic UI
+        // Optimistic UI (no immediate usedLeave impact for next-year bookings)
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
-        if (quickLeaveForm.type !== 'In Lieu') {
+
+        // Optionally maintain employees.usedLeave for THIS calendar year only (for external compatibility)
+        const currentYear = new Date().getFullYear();
+        if (quickLeaveForm.type !== 'In Lieu' && start.getFullYear() === currentYear) {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + dur.hours };
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + dur.hours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -574,7 +604,7 @@
       const openEmployeeModal = (employee=null) => {
         if (employee) {
           setEditingEmployee(employee);
-          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave), color: employee.color });
+          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave || 0), color: employee.color });
         } else {
           setEditingEmployee(null);
           setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
@@ -767,7 +797,6 @@
                                   if (leave.isBankHoliday) {
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
-                                  // Regular leaves won't appear here on weekends due to getLeaveForDate filtering
                                   const employee = employees.find(e => e.id === leave.employeeId);
                                   if (!employee) return null;
                                   return (
@@ -776,9 +805,12 @@
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          if (leave.type !== 'In Lieu') {
+                                          // Only adjust employees.usedLeave if the leave was in the current year
+                                          const currentYear = new Date().getFullYear();
+                                          const startYear = new Date(leave.startDate).getFullYear();
+                                          if (leave.type !== 'In Lieu' && startYear === currentYear) {
                                             const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - (leave.hours || 0)) });
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -802,7 +834,7 @@
 
           {/* Settings View */}
           {currentView === 'settings' && (
-            <div className="max-w-4xl mx_auto px-6 py-8">
+            <div className="max-w-4xl mx-auto px-6 py-8">
               <div className="bg-white rounded-xl shadow-sm border p-6">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">Workshop Settings</h2>
@@ -830,7 +862,7 @@
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                       </div>
                       <div>
-                        <label className="block text_sm font-medium text-gray-700 mb-2">End Date *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
                         <input type="date" value={shutdownForm.endDate}
                                onChange={(e) => setShutdownForm(prev => ({...prev, endDate: e.target.value}))}
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
@@ -896,9 +928,15 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
-                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
+                    const currentYear = new Date().getFullYear();
+                    const usedHours = computeUsedHoursForYear(employee.id, currentYear);
+                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHours);
+                    const usagePercentage = Math.min(100, Math.max(0, (usedHours / (employee.totalLeave || 1)) * 100));
+
+                    const recentLeaves = leaveRequests
+                      .filter(leave => leave.employeeId === employee.id)
+                      .sort((a,b) => new Date(b.startDate) - new Date(a.startDate))
+                      .slice(0, 3);
 
                     return (
                       <div key={employee.id}
@@ -927,8 +965,8 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Used ({currentYear}):</span><p className="font-medium">{formatHours(usedHours)}</p></div>
                             <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
@@ -962,7 +1000,7 @@
           {showEmployeeModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                <div className="flex items-center justify_between mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</h3>
                   <button onClick={() => setShowEmployeeModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                 </div>

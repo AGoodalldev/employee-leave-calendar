@@ -395,6 +395,7 @@
       const [isLoading, setIsLoading] = useState(true);
       const [showSidebar, setShowSidebar] = useState(false);
       const [currentView, setCurrentView] = useState('calendar');
+      const [quickLeaveForm, setQuickLeaveForm] = useState({employeeId: "",duration: "",type: ""});
 
       // Workshop shutdowns
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);

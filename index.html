@@ -434,11 +434,15 @@
             }
 
             setLeaveRequests(prev => [...prev, newLeaveRequest]);
-            setEmployees(prev => prev.map(emp => 
-              emp.id === parseInt(quickLeaveForm.employeeId) 
-                ? { ...emp, usedLeave: emp.usedLeave + totalHours } 
-                : emp
-            ));
+            
+            // Only update leave balance if it's not 'In Lieu' leave
+            if (quickLeaveForm.type !== 'In Lieu') {
+              setEmployees(prev => prev.map(emp => 
+                emp.id === parseInt(quickLeaveForm.employeeId) 
+                  ? { ...emp, usedLeave: emp.usedLeave + totalHours } 
+                  : emp
+              ));
+            }
 
             await syncData();
             setShowQuickLeaveModal(false);
@@ -804,11 +808,16 @@
                                           <button onClick={() => {
                                             if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                               setLeaveRequests(prev => prev.filter(req => req.id !== leave.id));
-                                              setEmployees(prev => prev.map(emp => 
-                                                emp.id === leave.employeeId 
-                                                  ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
-                                                  : emp
-                                              ));
+                                              
+                                              // Only update leave balance if it's not 'In Lieu' leave
+                                              if (leave.type !== 'In Lieu') {
+                                                setEmployees(prev => prev.map(emp => 
+                                                  emp.id === leave.employeeId 
+                                                    ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
+                                                    : emp
+                                                ));
+                                              }
+                                              
                                               syncData();
                                             }
                                           }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
@@ -1142,6 +1151,7 @@
                           <option value="Annual Leave">Annual Leave</option>
                           <option value="Sick Leave">Sick Leave</option>
                           <option value="Personal Leave">Personal Leave</option>
+                          <option value="In Lieu">In Lieu</option>
                         </select>
                       </div>
                       

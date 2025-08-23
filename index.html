@@ -355,15 +355,26 @@
         return new Date(year,month,lastDay.getDate()-sub);
       };
       const getBankHolidays = (year) => {
-        const hs=[]; hs.push({name:"New Year's Day",date:new Date(year,0,1)});
-        const easter=getEasterDate(year), gf=new Date(easter), em=new Date(easter); gf.setDate(easter.getDate()-2); em.setDate(easter.getDate()+1);
-        hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em)});
-        hs.push({name:"Early May Bank Holiday",date:getFirstMondayOfMonth(year,4)});
-        hs.push({name:"Spring Bank Holiday",date:getLastMondayOfMonth(year,4)});
-        hs.push({name:"Summer Bank Holiday",date:getLastMondayOfMonth(year,7)});
-        hs.push({name:"Christmas Day",date:new Date(year,11,25)}); hs.push({name:"Boxing Day",date:new Date(year,11,26)});
-        return hs;
-      };
+  const hs = [];
+  hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+
+  const easter = getEasterDate(year);
+  const gf = new Date(easter);
+  const em = new Date(easter);
+  gf.setDate(easter.getDate() - 2); // Good Friday
+  em.setDate(easter.getDate() + 1); // Easter Monday
+
+  hs.push({ name: "Good Friday", date: gf });
+  hs.push({ name: "Easter Monday", date: em });
+  hs.push({ name: "Early May Bank Holiday", date: getFirstMondayOfMonth(year, 4) });
+  hs.push({ name: "Spring Bank Holiday", date: getLastMondayOfMonth(year, 4) });
+  hs.push({ name: "Summer Bank Holiday", date: getLastMondayOfMonth(year, 7) });
+  hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+  hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+
+  return hs;
+};
+
 
       // ---- working-day helpers (weekends + bank holidays) ----
       const isSameDay = (a, b) => a.toDateString() === b.toDateString();

@@ -137,7 +137,7 @@
         return this.unsubs.employees;
       }
 
-      // ✅ UPDATED: ensure every leave row has a usable id (doc id fallback)
+      // ensure every leave row has a usable id (doc id fallback)
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -188,7 +188,7 @@
         return snap.docs.map(d => d.data());
       }
 
-      // ✅ UPDATED: id fallback for initial fetch
+      // id fallback for initial fetch
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
@@ -263,7 +263,7 @@
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
       }
 
-      // ✅ UPDATED: defensive delete by id
+      // defensive delete by id
       async deleteLeaveRequest(id) {
         if (!id) { console.warn("deleteLeaveRequest called without id"); return; }
         if (!this.db) {
@@ -357,7 +357,7 @@
       const getBankHolidays = (year) => {
         const hs=[]; hs.push({name:"New Year's Day",date:new Date(year,0,1)});
         const easter=getEasterDate(year), gf=new Date(easter), em=new Date(easter); gf.setDate(easter.getDate()-2); em.setDate(easter.getDate()+1);
-        hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em});
+        hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em)});
         hs.push({name:"Early May Bank Holiday",date:getFirstMondayOfMonth(year,4)});
         hs.push({name:"Spring Bank Holiday",date:getLastMondayOfMonth(year,4)});
         hs.push({name:"Summer Bank Holiday",date:getLastMondayOfMonth(year,7)});
@@ -365,7 +365,30 @@
         return hs;
       };
 
-      // ✅ Quick leave form: start EMPTY so placeholders show
+      // ---- working-day helpers (weekends + bank holidays) ----
+      const isSameDay = (a, b) => a.toDateString() === b.toDateString();
+      const isBankHolidayDate = (date) =>
+        getBankHolidays(date.getFullYear()).some(h => isSameDay(h.date, date));
+      const isWeekendDay = (date) => date.getDay() === 0 || date.getDay() === 6;
+      const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
+      const nextWorkingDay = (date) => {
+        const d = new Date(date);
+        while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
+        return d;
+      };
+      // Start counts as day 1. Returns the last working day of the booking.
+      const addWorkingDays = (start, days) => {
+        let d = nextWorkingDay(start);
+        if (days <= 1) return d;
+        let remaining = days - 1;
+        while (remaining > 0) {
+          d.setDate(d.getDate() + 1);
+          if (isWorkingDay(d)) remaining--;
+        }
+        return d;
+      };
+
+      // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: "",
         duration: "", // "D:n" or "H:n"
@@ -409,24 +432,39 @@
       };
       const getGridColumns = () => viewMode==='year' ? 'grid-cols-4' : 'grid-cols-7';
 
+      // Only show leave on working days; include shutdowns & bank holidays separately
       const getLeaveForDate = (date) => {
-        const regs = leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
+        const regs = leaveRequests.filter(l => {
+          const s = new Date(l.startDate), e = new Date(l.endDate);
+          return date >= s && date <= e && isWorkingDay(date);
+        });
+
         const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
-        const bhList = getBankHolidays(date.getFullYear());
-        const bh = bhList.find(h => h.date.toDateString() === date.toDateString());
         const res = [...regs];
-        shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
-        if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
-        return res;
-      };
-      const getStatusColor = (status) => {
-        switch(status){
-          case 'approved': return 'bg-green-100 text-green-800';
-          case 'pending': return 'bg-yellow-100 text-yellow-800';
-          case 'shutdown': return 'bg-red-100 text-red-800';
-          case 'bankholiday': return 'bg-purple-100 text-purple-800';
-          default: return 'bg-gray-100 text-gray-800';
+
+        shut.forEach(s => res.push({
+          id: `shutdown-${s.id}`,
+          type: 'Workshop Shutdown',
+          status: 'shutdown',
+          isShutdown: true,
+          name: s.name
+        }));
+
+        if (!isWorkingDay(date)) {
+          // separately show bank holiday label (weekends just get grey background)
+          if (isBankHolidayDate(date)) {
+            const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
+            res.push({
+              id: `bankholiday-${bh.name.replace(/\s+/g,'-')}`,
+              type: 'Bank Holiday',
+              status: 'bankholiday',
+              isBankHoliday: true,
+              name: bh.name
+            });
+          }
         }
+
+        return res;
       };
 
       // ---------- INITIALISE ----------
@@ -456,7 +494,7 @@
 
       // ---------- ACTIONS ----------
       const saveQuickLeave = async () => {
-        // basic validation (placeholders selected?)
+        // basic validation
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
           return;
@@ -469,20 +507,31 @@
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
 
-        const start = new Date(selectedDate);
-        const end = new Date(selectedDate);
-        if (!isHours && n > 1) end.setDate(start.getDate() + n - 1);
+        // ensure we start on a working day
+        let start = nextWorkingDay(new Date(selectedDate));
+        let end   = new Date(start);
+
+        if (isHours) {
+          // hours stay on the same (next working) day
+        } else {
+          // days: skip weekends + bank holidays
+          end = addWorkingDays(start, n);
+        }
 
         const totalHours = isHours ? n : n * 8;
 
         const newLeave = {
           employeeId: parseInt(quickLeaveForm.employeeId),
-          startDate: start, endDate: end,
-          type: quickLeaveForm.type, status: 'approved', hours: totalHours
+          startDate: start,
+          endDate: end,
+          type: quickLeaveForm.type,
+          status: 'approved',
+          hours: totalHours
         };
 
         // Optimistic UI
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
@@ -700,17 +749,18 @@
                         {days.map((date, idx) => {
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekend = date.getDay()===0 || date.getDay()===6;
+                          const weekend = isWeekendDay(date);
+                          const nonWorking = !isWorkingDay(date);
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
-                                {isCurrentMonth && !isWeekend && (
+                                {isCurrentMonth && isWorkingDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
                                     // open modal with empty selections (placeholders visible)
@@ -986,7 +1036,7 @@
             </div>
           )}
 
-          {/* Quick Leave Modal (placeholders + disabled button until valid) */}
+          {/* Quick Leave Modal */}
           {showQuickLeaveModal && selectedDate && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">

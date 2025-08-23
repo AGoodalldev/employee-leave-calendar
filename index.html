@@ -53,8 +53,10 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
+    // Offline-first cache
     enableIndexedDbPersistence(db).catch(() => {});
 
+    // Wait for anonymous auth
     const ready = new Promise((resolve) => {
       let resolved = false;
       onAuthStateChanged(auth, (user) => {
@@ -76,7 +78,7 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
 
-    // Icon component
+    // ---------- Icons ----------
     const Icon = ({ name, className }) => {
       const paths = {
         calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
@@ -91,7 +93,7 @@
         chevronLeft: "M15 19l-7-7 7-7",
         userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
         home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
         factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
       };
       return (
@@ -118,7 +120,6 @@
         return v instanceof Date ? v : null;
       }
 
-      // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
         if (!this.db) return () => {};
         const { collection, query, orderBy, onSnapshot } = this.api;
@@ -160,7 +161,6 @@
         return this.unsubs.shutdowns;
       }
 
-      // ----- LOCAL FALLBACK FETCHES -----
       async fetchEmployees() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_employees');
@@ -203,7 +203,6 @@
         });
       }
 
-      // ----- PER-DOC WRITES -----
       async upsertEmployee(emp) {
         if (!this.db) {
           const arr = await this.fetchEmployees();
@@ -242,16 +241,6 @@
         if (!this.db) return;
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
-      }
-
-      async deleteLeaveRequest(id) {
-        if (!this.db) {
-          const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
-          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
-          return;
-        }
-        const { doc, deleteDoc } = this.api;
-        await deleteDoc(doc(this.db, "leave_requests", String(id)));
       }
 
       async createShutdown(s) {
@@ -293,22 +282,74 @@
 
     // ---------- Utils ----------
     const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+    const addDays    = (d, n) => new Date(atMidnight(d).getTime() + n*86400000);
+
+    // Month names
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    // UK bank holidays
+    const getEasterDate = (year) => {
+      const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
+      return new Date(year,n-1,p+1);
+    };
+    const getFirstMondayOfMonth = (year, month) => {
+      const firstDay=new Date(year,month,1), dow=firstDay.getDay(), daysUntilMonday=dow===0?1:8-dow;
+      return new Date(year,month,1+daysUntilMonday);
+    };
+    const getLastMondayOfMonth = (year, month) => {
+      const lastDay=new Date(year,month+1,0), dow=lastDay.getDay(), sub=dow===1?0:dow===0?6:dow-1;
+      return new Date(year,month,lastDay.getDate()-sub);
+    };
+    const getBankHolidays = (year) => {
+      const hs=[]; hs.push({name:"New Year's Day",date:new Date(year,0,1)});
+      const easter=getEasterDate(year), gf=new Date(easter), em=new Date(easter); gf.setDate(easter.getDate()-2); em.setDate(easter.getDate()+1);
+      hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em});
+      hs.push({name:"Early May Bank Holiday",date:getFirstMondayOfMonth(year,4)});
+      hs.push({name:"Spring Bank Holiday",date:getLastMondayOfMonth(year,4)});
+      hs.push({name:"Summer Bank Holiday",date:getLastMondayOfMonth(year,7)});
+      hs.push({name:"Christmas Day",date:new Date(year,11,25)}); hs.push({name:"Boxing Day",date:new Date(year,11,26)});
+      return hs;
+    };
+
     const isWeekendDate = (d) => { const day = new Date(d).getDay(); return day === 0 || day === 6; };
-    const addDays = (d, n) => new Date(atMidnight(d).getTime() + n*86400000);
+    const isBankHolidayDate = (d) => {
+      const y = new Date(d).getFullYear();
+      const t = atMidnight(d).getTime();
+      return getBankHolidays(y).some(h => atMidnight(h.date).getTime() === t);
+    };
+    const isBusinessDay = (d) => !isWeekendDate(d) && !isBankHolidayDate(d);
+
+    const nextBusinessDay = (d) => {
+      let x = atMidnight(d);
+      while (!isBusinessDay(x)) x = addDays(x, 1);
+      return x;
+    };
+
+    // Add N business days inclusive of the (adjusted) start date
+    const addBusinessDays = (start, days) => {
+      let d = nextBusinessDay(start);
+      let remaining = Math.max(1, days);
+      while (remaining > 1) {
+        d = addDays(d, 1);
+        if (isBusinessDay(d)) remaining--;
+      }
+      return d;
+    };
+
     const toInputDate = (d) => { if (!d) return ''; const z = new Date(d); if (isNaN(z)) return ''; return z.toISOString().slice(0,10); };
 
-    // Portion of a leave (in hours) that applies to a given year, excluding weekends
+    // Portion of a leave (in hours) that applies to a given year, excluding weekends & bank holidays
     const hoursPortionInYear = (leave, year) => {
       const s = new Date(leave.startDate);
       const e = new Date(leave.endDate);
       const sameDay = atMidnight(s).getTime() === atMidnight(e).getTime();
 
       if (sameDay && leave.hours < 8) {
-        return (s.getFullYear() === year && !isWeekendDate(s)) ? leave.hours : 0;
+        return (s.getFullYear() === year && isBusinessDay(s)) ? leave.hours : 0;
       }
       let sum = 0;
       for (let d = atMidnight(s); d <= atMidnight(e); d = addDays(d, 1)) {
-        if (d.getFullYear() === year && !isWeekendDate(d)) sum += 8;
+        if (d.getFullYear() === year && isBusinessDay(d)) sum += 8;
       }
       return sum;
     };
@@ -316,7 +357,7 @@
     const weekdayCountInclusive = (s, e) => {
       let c = 0;
       for (let d = atMidnight(s); d <= atMidnight(e); d = addDays(d, 1)) {
-        if (!isWeekendDate(d)) c++;
+        if (isBusinessDay(d)) c++;
       }
       return c;
     };
@@ -325,7 +366,7 @@
       const s = new Date(leave.startDate);
       const e = new Date(leave.endDate);
       const same = atMidnight(s).getTime() === atMidnight(e).getTime();
-      if (same && leave.hours < 8) return isWeekendDate(s) ? 0 : leave.hours;
+      if (same && leave.hours < 8) return isBusinessDay(s) ? leave.hours : 0;
       return weekdayCountInclusive(s, e) * 8;
     };
 
@@ -335,16 +376,11 @@
       const d = Math.floor(h / 8), r = h % 8;
       return r ? `${d}d ${r}h` : `${d}d`;
     };
+    const formatHours = (h) => { const d = Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
 
-    const formatHours = (h) => {
-      const d = Math.floor(h/8), r=h%8;
-      return r>0?`${d}d ${r}h`:`${d}d`;
-    };
-
-    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
+    // ---------- App ----------
     const LeaveCalendar = () => {
-      // State management
+      // State
       const [currentDate, setCurrentDate] = useState(new Date());
       const [viewMode, setViewMode] = useState('month');
       const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
@@ -360,7 +396,7 @@
       const [showSidebar, setShowSidebar] = useState(false);
       const [currentView, setCurrentView] = useState('calendar');
 
-      // Workshop shutdowns state
+      // Workshop shutdowns
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
 
@@ -390,40 +426,7 @@
         };
       }, []);
 
-      // Bank holidays helpers
-      const getEasterDate = (year) => {
-        const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
-        return new Date(year,n-1,p+1);
-      };
-      const getFirstMondayOfMonth = (year, month) => {
-        const firstDay=new Date(year,month,1), dow=firstDay.getDay(), daysUntilMonday=dow===0?1:8-dow;
-        return new Date(year,month,1+daysUntilMonday);
-      };
-      const getLastMondayOfMonth = (year, month) => {
-        const lastDay=new Date(year,month+1,0), dow=lastDay.getDay(), sub=dow===1?0:dow===0?6:dow-1;
-        return new Date(year,month,lastDay.getDate()-sub);
-      };
-      const getBankHolidays = (year) => {
-        const hs=[]; hs.push({name:"New Year's Day",date:new Date(year,0,1)});
-        const easter=getEasterDate(year), gf=new Date(easter), em=new Date(easter); gf.setDate(easter.getDate()-2); em.setDate(easter.getDate()+1);
-        hs.push({name:"Good Friday",date:gf}); hs.push({name:"Easter Monday",date:em});
-        hs.push({name:"Early May Bank Holiday",date:getFirstMondayOfMonth(year,4)});
-        hs.push({name:"Spring Bank Holiday",date:getLastMondayOfMonth(year,4)});
-        hs.push({name:"Summer Bank Holiday",date:getLastMondayOfMonth(year,7)});
-        hs.push({name:"Christmas Day",date:new Date(year,11,25)}); hs.push({name:"Boxing Day",date:new Date(year,11,26)});
-        return hs;
-      };
-
-      // Quick add form (start empty for placeholders)
-      const [quickLeaveForm, setQuickLeaveForm] = useState({
-        employeeId: '',
-        duration: '',  // "D:n" or "H:n"
-        type: ''
-      });
-
-      const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
-      const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
-
+      // Calendar helpers
       const getMonthDays = () => {
         const y=currentDate.getFullYear(), m=currentDate.getMonth();
         const first=new Date(y,m,1); const start=new Date(first); start.setDate(start.getDate()-first.getDay());
@@ -459,7 +462,7 @@
         const regs = leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
         const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
         const bhList = getBankHolidays(date.getFullYear());
-        const bh = bhList.find(h => h.date.toDateString() === date.toDateString());
+        const bh = bhList.find(h => atMidnight(h.date).getTime() === atMidnight(date).getTime());
         const res = [...regs];
         shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
         if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
@@ -475,7 +478,7 @@
         }
       };
 
-      // ---------- INITIALISE ----------
+      // ---------- INIT ----------
       useEffect(() => {
         let unsubEmp = null, unsubLeave = null, unsubShut = null;
 
@@ -500,7 +503,7 @@
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
-      // ---------- Team helpers ----------
+      // Team: next upcoming leave
       const getNextLeaveForEmployee = (empId) => {
         const today = atMidnight(new Date());
         const upcoming = leaveRequests
@@ -523,9 +526,16 @@
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
 
-        const start = new Date(selectedDate);
-        const end = new Date(selectedDate);
-        if (!isHours && n > 1) end.setDate(start.getDate() + n - 1);
+        let start = new Date(selectedDate);
+        let end   = new Date(selectedDate);
+
+        if (isHours) {
+          end = start;
+        } else {
+          // DAYS: skip weekends and bank holidays
+          start = nextBusinessDay(start);
+          end   = addBusinessDays(start, n);
+        }
 
         const totalHours = isHours ? n : n * 8;
 
@@ -538,7 +548,7 @@
         // Optimistic UI: add event
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
-        // Year-aware, weekday-only deduction
+        // Year-aware, business-day-only deduction
         const currentYear = new Date().getFullYear();
         const portion = hoursPortionInYear(newLeave, currentYear);
 
@@ -633,7 +643,7 @@
           setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave), color: employee.color });
         } else {
           setEditingEmployee(null);
-          setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
+          setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'][employees.length % 6] });
         }
         setShowEmployeeModal(true);
       };
@@ -750,7 +760,6 @@
                         const map = new Map();
                         monthLeaves.forEach(leave => {
                           const id = leave.employeeId;
-                          // Sum weekday-only days
                           const hrs = workingHoursForLeave(leave);
                           const days = Math.round(hrs/8);
                           if (map.has(id)) map.get(id).totalDays += days;
@@ -790,17 +799,20 @@
                         {days.map((date, idx) => {
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekend = date.getDay()===0 || date.getDay()===6;
+                          const weekend = isWeekendDate(date);
+                          const bankHoliday = isBankHolidayDate(date);
+                          const isBlocked = weekend || bankHoliday;
                           const dayLeaves = getLeaveForDate(date);
+
                           return (
                             <div key={idx}
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
-                                {isCurrentMonth && !isWeekend && (
+                                {isCurrentMonth && !isBlocked && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
                                     setQuickLeaveForm({ employeeId:'', duration:'', type:'' }); // placeholders
@@ -816,8 +828,8 @@
                                   if (leave.isBankHoliday) {
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
-                                  // Do NOT render employee leaves on weekends
-                                  if (isWeekend) return null;
+                                  // Do NOT render employee leaves on weekends or bank holidays
+                                  if (isBlocked) return null;
 
                                   const employee = employees.find(e => e.id === leave.employeeId);
                                   if (!employee) return null;
@@ -828,11 +840,10 @@
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
                                           if (leave.type !== 'In Lieu') {
+                                            const currentYear = new Date().getFullYear();
+                                            const portion = hoursPortionInYear(leave, currentYear);
                                             const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) {
-                                              const portion = hoursPortionInYear(leave, currentYear);
-                                              await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - portion) });
-                                            }
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - portion) });
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -1070,7 +1081,7 @@
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Avatar Color</label>
                     <div className="flex flex-wrap gap-2">
-                      {colorOptions.map(color => (
+                      {['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'].map(color => (
                         <button key={color} type="button"
                                 onClick={() => setEmployeeForm(prev => ({...prev, color}))}
                                 className={`w-8 h-8 rounded-full border-2 ${employeeForm.color === color ? 'border-gray-800 scale-110' : 'border-gray-300'}`}

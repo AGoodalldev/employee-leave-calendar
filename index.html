@@ -30,7 +30,7 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase v12 ESM config + helpers -->
+  <!-- Firebase v12 ESM init with ready() -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
@@ -40,7 +40,7 @@
       writeBatch, query, orderBy, Timestamp
     } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
-    // Your web app's Firebase configuration
+    // Your Firebase project (safe to be public)
     const firebaseConfig = {
       apiKey: "AIzaSyD8zcVQBrK_Q_WQZKa856u2ka901eakX0A",
       authDomain: "atkin-guitars-94dd8.firebaseapp.com",
@@ -55,23 +55,22 @@
     const db = getFirestore(app);
 
     // Offline-first
-    enableIndexedDbPersistence(db).catch(() => {});
+    enableIndexedDbPersistence(db).catch(() => { /* already enabled/unsupported */ });
 
-    // Simple anonymous auth
-    signInAnonymously(auth).catch(console.error);
-
-    // Expose instances + modular helpers for the Babel script
-    window.__fb = {
-      app, auth, db,
-      api: {
-        collection, doc, getDocs, getDoc, setDoc, deleteDoc,
-        writeBatch, query, orderBy, Timestamp
-      }
-    };
-
-    onAuthStateChanged(auth, (user) => {
-      console.log("Firebase user:", user?.uid || "(signed out)");
+    // Ensure authenticated (satisfies rules: request.auth != null)
+    const ready = new Promise((resolve) => {
+      let resolved = false;
+      onAuthStateChanged(auth, (user) => {
+        if (user && !resolved) { resolved = true; resolve(user); }
+      });
+      signInAnonymously(auth).catch(console.error);
     });
+
+    // Expose to Babel script
+    window.__fb = {
+      app, auth, db, ready,
+      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp }
+    };
   </script>
 
   <!-- App code -->
@@ -103,7 +102,7 @@
       );
     };
 
-    // Database API using Firebase modular helpers via window.__fb
+    // Database API using Firebase via window.__fb
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
@@ -115,15 +114,11 @@
 
       _tsToDate(v) {
         if (!v) return null;
-        // Firestore Timestamp → Date
         if (v && typeof v.toDate === "function") return v.toDate();
-        // ISO string → Date
         if (typeof v === "string") return new Date(v);
         return v instanceof Date ? v : null;
       }
-      _date(v) {
-        return v instanceof Date ? v : new Date(v);
-      }
+      _date(v){ return v instanceof Date ? v : new Date(v); }
 
       async fetchEmployees() {
         if (!this.db) {
@@ -143,17 +138,9 @@
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
           if (stored) {
-            return JSON.parse(stored).map(req => ({
-              ...req,
-              startDate: new Date(req.startDate),
-              endDate: new Date(req.endDate)
-            }));
+            return JSON.parse(stored).map(req => ({ ...req, startDate: new Date(req.startDate), endDate: new Date(req.endDate) }));
           }
-          return [{
-            id: 1, employeeId: 1, startDate: new Date(2025, 7, 25),
-            endDate: new Date(2025, 7, 29), type: 'Annual Leave',
-            status: 'approved', hours: 40
-          }];
+          return [{ id: 1, employeeId: 1, startDate: new Date(2025,7,25), endDate: new Date(2025,7,29), type: 'Annual Leave', status: 'approved', hours: 40 }];
         }
         const { collection, getDocs } = this.api;
         const snap = await getDocs(collection(this.db, "leave_requests"));
@@ -167,11 +154,7 @@
         if (!this.db) {
           const stored = localStorage.getItem('atkin_workshop_shutdowns');
           if (stored) {
-            return JSON.parse(stored).map(s => ({
-              ...s,
-              startDate: new Date(s.startDate),
-              endDate: new Date(s.endDate)
-            }));
+            return JSON.parse(stored).map(s => ({ ...s, startDate: new Date(s.startDate), endDate: new Date(s.endDate) }));
           }
           return [];
         }
@@ -186,9 +169,7 @@
       async saveData(type, data) {
         if (!this.db) {
           if (type === 'leave_requests') {
-            const serialized = data.map(req => ({
-              ...req, startDate: req.startDate.toISOString(), endDate: req.endDate.toISOString()
-            }));
+            const serialized = data.map(req => ({ ...req, startDate: req.startDate.toISOString(), endDate: req.endDate.toISOString() }));
             localStorage.setItem('atkin_leave_requests', JSON.stringify(serialized));
           } else {
             localStorage.setItem('atkin_employees', JSON.stringify(data));
@@ -214,9 +195,7 @@
 
       async saveWorkshopShutdowns(shutdowns) {
         if (!this.db) {
-          const serialized = shutdowns.map(s => ({
-            ...s, startDate: s.startDate.toISOString(), endDate: s.endDate.toISOString()
-          }));
+          const serialized = shutdowns.map(s => ({ ...s, startDate: s.startDate.toISOString(), endDate: s.endDate.toISOString() }));
           localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(serialized));
           return;
         }
@@ -234,13 +213,11 @@
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "employees", String(id)));
       }
-
       async deleteLeaveRequest(id) {
         if (!this.db) return;
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "leave_requests", String(id)));
       }
-
       async deleteWorkshopShutdown(id) {
         if (!this.db) return;
         const { doc, deleteDoc } = this.api;
@@ -295,7 +272,7 @@
       }, [addNotification]);
 
       // Bank holidays helpers
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const getEasterDate = (year) => {
         const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), n = Math.floor((h + l - 7 * m + 114) / 31), p = (h + l - 7 * m + 114) % 31;
         return new Date(year, n - 1, p + 1);
@@ -314,100 +291,73 @@
       };
       const getBankHolidays = (year) => {
         const hs = [];
-        hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+        hs.push({ name: "New Year's Day", date: new Date(year,0,1) });
         const easter = getEasterDate(year);
-        const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate() - 2);
-        const easterMon = new Date(easter); easterMon.setDate(easter.getDate() + 1);
-        hs.push({ name: "Good Friday", date: goodFriday });
-        hs.push({ name: "Easter Monday", date: easterMon });
-        hs.push({ name: "Early May Bank Holiday", date: getFirstMondayOfMonth(year, 4) });
-        hs.push({ name: "Spring Bank Holiday", date: getLastMondayOfMonth(year, 4) });
-        hs.push({ name: "Summer Bank Holiday", date: getLastMondayOfMonth(year, 7) });
-        hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
-        hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+        const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate()-2);
+        const easterMon = new Date(easter); easterMon.setDate(easter.getDate()+1);
+        hs.push({ name:"Good Friday", date:goodFriday });
+        hs.push({ name:"Easter Monday", date:easterMon });
+        hs.push({ name:"Early May Bank Holiday", date:getFirstMondayOfMonth(year,4) });
+        hs.push({ name:"Spring Bank Holiday", date:getLastMondayOfMonth(year,4) });
+        hs.push({ name:"Summer Bank Holiday", date:getLastMondayOfMonth(year,7) });
+        hs.push({ name:"Christmas Day", date:new Date(year,11,25) });
+        hs.push({ name:"Boxing Day", date:new Date(year,11,26) });
         return hs;
       };
 
       const [quickLeaveForm, setQuickLeaveForm] = useState({ employeeId: '1', days: 1, type: 'Annual Leave' });
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
-      const colorOptions = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+      const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
 
-      const formatHours = (hours) => {
-        const days = Math.floor(hours / 8);
-        const remainingHours = hours % 8;
-        return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-      };
-      const generateInitials = (name) => name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
+      const formatHours = (h) => { const d = Math.floor(h/8), r = h%8; return r>0 ? `${d}d ${r}h` : `${d}d`; };
+      const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
       const getMonthDays = () => {
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        const firstDay = new Date(year, month, 1);
-        const startDate = new Date(firstDay);
-        startDate.setDate(startDate.getDate() - firstDay.getDay());
+        const y = currentDate.getFullYear(), m = currentDate.getMonth();
+        const first = new Date(y,m,1);
+        const start = new Date(first); start.setDate(start.getDate() - first.getDay());
         const days = [];
-        for (let i = 0; i < 42; i++) {
-          days.push(new Date(startDate));
-          startDate.setDate(startDate.getDate() + 1);
-        }
+        for (let i=0;i<42;i++){ days.push(new Date(start)); start.setDate(start.getDate()+1); }
         return days;
       };
       const getWeekDays = () => {
-        const startOfWeek = new Date(currentDate);
-        const day = startOfWeek.getDay();
-        startOfWeek.setDate(currentDate.getDate() - day);
-        const days = [];
-        for (let i = 0; i < 7; i++) {
-          const day = new Date(startOfWeek);
-          day.setDate(startOfWeek.getDate() + i);
-          days.push(day);
-        }
-        return days;
+        const start = new Date(currentDate); const day = start.getDay(); start.setDate(currentDate.getDate()-day);
+        return Array.from({length:7}, (_,i)=>{ const d=new Date(start); d.setDate(start.getDate()+i); return d; });
       };
-      const getYearMonths = () => {
-        const year = currentDate.getFullYear();
-        return Array.from({ length: 12 }, (_, i) => new Date(year, i, 1));
-      };
-      const getCalendarDays = () => viewMode === 'week' ? getWeekDays() : (viewMode === 'year' ? getYearMonths() : getMonthDays());
-      const navigateCalendar = (direction) => {
-        setCurrentDate(prev => {
-          const newDate = new Date(prev);
-          if (viewMode === 'week') newDate.setDate(prev.getDate() + (direction * 7));
-          else if (viewMode === 'year') newDate.setFullYear(prev.getFullYear() + direction);
-          else newDate.setMonth(prev.getMonth() + direction);
-          return newDate;
-        });
-      };
+      const getYearMonths = () => Array.from({length:12}, (_,i)=>new Date(currentDate.getFullYear(), i, 1));
+      const getCalendarDays = () => viewMode==='week' ? getWeekDays() : (viewMode==='year' ? getYearMonths() : getMonthDays());
+      const navigateCalendar = (dir) => setCurrentDate(prev => {
+        const nd=new Date(prev);
+        if (viewMode==='week') nd.setDate(prev.getDate() + dir*7);
+        else if (viewMode==='year') nd.setFullYear(prev.getFullYear() + dir);
+        else nd.setMonth(prev.getMonth() + dir);
+        return nd;
+      });
       const getViewTitle = () => {
-        if (viewMode === 'week') {
-          const startOfWeek = new Date(currentDate);
-          const day = startOfWeek.getDay();
-          startOfWeek.setDate(currentDate.getDate() - day);
-          const endOfWeek = new Date(startOfWeek);
-          endOfWeek.setDate(startOfWeek.getDate() + 6);
-          if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
-            return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()}-${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
-          } else {
-            return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()} - ${monthNames[endOfWeek.getMonth()]} ${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
-          }
-        } else if (viewMode === 'year') return currentDate.getFullYear().toString();
-        else return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+        if (viewMode==='week') {
+          const s=new Date(currentDate); const day=s.getDay(); s.setDate(currentDate.getDate()-day);
+          const e=new Date(s); e.setDate(s.getDate()+6);
+          return (s.getMonth()===e.getMonth())
+            ? `${monthNames[s.getMonth()]} ${s.getDate()}-${e.getDate()}, ${s.getFullYear()}`
+            : `${monthNames[s.getMonth()]} ${s.getDate()} - ${monthNames[e.getMonth()]} ${e.getDate()}, ${s.getFullYear()}`;
+        }
+        if (viewMode==='year') return String(currentDate.getFullYear());
+        return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
       };
-      const getGridColumns = () => viewMode === 'year' ? 'grid-cols-4' : 'grid-cols-7';
+      const getGridColumns = () => viewMode==='year' ? 'grid-cols-4' : 'grid-cols-7';
 
       const getLeaveForDate = (date) => {
-        const regularLeave = leaveRequests.filter(leave => (date >= new Date(leave.startDate) && date <= new Date(leave.endDate)));
-        const shutdownsOnDate = workshopShutdowns.filter(shutdown => (date >= new Date(shutdown.startDate) && date <= new Date(shutdown.endDate)));
-        const bankHolidays = getBankHolidays(date.getFullYear());
-        const bankHolidayOnDate = bankHolidays.find(h => h.date.toDateString() === date.toDateString());
-
-        const result = [...regularLeave];
-        shutdownsOnDate.forEach(shutdown => result.push({ id: `shutdown-${shutdown.id}`, type: 'Workshop Shutdown', status: 'shutdown', isShutdown: true, name: shutdown.name }));
-        if (bankHolidayOnDate) result.push({ id: `bankholiday-${bankHolidayOnDate.name.replace(/\s+/g, '-')}`, type: 'Bank Holiday', status: 'bankholiday', isBankHoliday: true, name: bankHolidayOnDate.name });
-        return result;
+        const regs = leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
+        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
+        const bhList = getBankHolidays(date.getFullYear());
+        const bh = bhList.find(h => h.date.toDateString() === date.toDateString());
+        const res = [...regs];
+        shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
+        if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
+        return res;
       };
       const getStatusColor = (status) => {
-        switch(status) {
+        switch(status){
           case 'approved': return 'bg-green-100 text-green-800';
           case 'pending': return 'bg-yellow-100 text-yellow-800';
           case 'shutdown': return 'bg-red-100 text-red-800';
@@ -427,11 +377,11 @@
       const saveQuickLeave = async () => {
         const days = parseInt(quickLeaveForm.days) || 1;
         const totalHours = days * 8;
-        const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
+        const employee = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        const newLeaveRequest = {
-          id: Math.max(0, ...leaveRequests.map(req => req.id)) + 1,
+        const newLeave = {
+          id: Math.max(0, ...leaveRequests.map(r => r.id)) + 1,
           employeeId: parseInt(quickLeaveForm.employeeId),
           startDate: new Date(selectedDate),
           endDate: new Date(selectedDate),
@@ -439,14 +389,12 @@
           status: 'approved',
           hours: totalHours
         };
-        if (days > 1) newLeaveRequest.endDate.setDate(newLeaveRequest.startDate.getDate() + days - 1);
+        if (days > 1) newLeave.endDate.setDate(newLeave.startDate.getDate() + days - 1);
 
-        setLeaveRequests(prev => [...prev, newLeaveRequest]);
-
+        setLeaveRequests(prev => [...prev, newLeave]);
         if (quickLeaveForm.type !== 'In Lieu') {
-          setEmployees(prev => prev.map(emp => emp.id === newLeaveRequest.employeeId ? { ...emp, usedLeave: emp.usedLeave + totalHours } : emp));
+          setEmployees(prev => prev.map(e => e.id === newLeave.employeeId ? { ...e, usedLeave: e.usedLeave + totalHours } : e));
         }
-
         await syncData();
         setShowQuickLeaveModal(false);
       };
@@ -457,18 +405,15 @@
         const usedLeave = parseInt(employeeForm.usedLeave) || 0;
 
         if (editingEmployee) {
-          const updatedEmployee = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
-          setEmployees(prev => prev.map(emp => emp.id === editingEmployee.id ? updatedEmployee : emp));
+          const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
+          setEmployees(prev => prev.map(e => e.id === editingEmployee.id ? updated : e));
         } else {
-          const newEmployee = {
-            id: Math.max(0, ...employees.map(emp => emp.id)) + 1,
-            name: employeeForm.name,
-            department: employeeForm.department,
-            totalLeave, usedLeave,
-            avatar: generateInitials(employeeForm.name),
-            color: employeeForm.color
+          const newEmp = {
+            id: Math.max(0, ...employees.map(e => e.id)) + 1,
+            name: employeeForm.name, department: employeeForm.department,
+            totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color
           };
-          setEmployees(prev => [...prev, newEmployee]);
+          setEmployees(prev => [...prev, newEmp]);
         }
         await syncData();
         setShowEmployeeModal(false);
@@ -477,7 +422,7 @@
 
       const deleteEmployee = async (employeeId) => {
         if (!confirm('Are you sure you want to delete this employee?')) return;
-        setEmployees(prev => prev.filter(emp => emp.id !== employeeId));
+        setEmployees(prev => prev.filter(e => e.id !== employeeId));
         await dbApi.deleteEmployee(employeeId);
         await syncData();
       };
@@ -488,17 +433,13 @@
         const endDate = new Date(shutdownForm.endDate);
         if (endDate < startDate) { addNotification('End date must be after start date', 'error'); return; }
 
-        const newShutdown = {
+        const newS = {
           id: Math.max(0, ...workshopShutdowns.map(s => s.id)) + 1,
-          name: shutdownForm.name,
-          startDate, endDate,
-          description: shutdownForm.description
+          name: shutdownForm.name, startDate, endDate, description: shutdownForm.description
         };
-
-        setWorkshopShutdowns(prev => [...prev, newShutdown]);
+        setWorkshopShutdowns(prev => [...prev, newS]);
         await syncData();
-
-        setShutdownForm({ name: '', startDate: '', endDate: '', description: '' });
+        setShutdownForm({ name:'', startDate:'', endDate:'', description:'' });
         addNotification('Workshop shutdown added successfully', 'success');
       };
 
@@ -510,34 +451,27 @@
         addNotification('Workshop shutdown deleted', 'success');
       };
 
-      const openEmployeeModal = (employee = null) => {
+      const openEmployeeModal = (employee=null) => {
         if (employee) {
           setEditingEmployee(employee);
-          setEmployeeForm({
-            name: employee.name,
-            department: employee.department,
-            totalLeave: String(employee.totalLeave),
-            usedLeave: String(employee.usedLeave),
-            color: employee.color
-          });
+          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave), color: employee.color });
         } else {
           setEditingEmployee(null);
-          setEmployeeForm({
-            name: '', department: '', totalLeave: '160', usedLeave: '0',
-            color: colorOptions[employees.length % colorOptions.length]
-          });
+          setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
         }
         setShowEmployeeModal(true);
       };
 
-      // Load initial data
+      // INITIAL LOAD — wait for Firebase auth before fetching
       useEffect(() => {
         const loadData = async () => {
+          if (window.__fb?.ready) { await window.__fb.ready; }  // 👈 added line
+
           const [employeesDataRaw, leaveRequestsData, shutdownsData] = await Promise.all([
             dbApi.fetchEmployees(), dbApi.fetchLeaveRequests(), dbApi.fetchWorkshopShutdowns()
           ]);
 
-          // Seed employees in empty Firestore collection (first run)
+          // Seed Firestore once if empty
           let employeesData = employeesDataRaw;
           if (window.__fb?.db && employeesData.length === 0) {
             employeesData = [
@@ -568,23 +502,11 @@
         );
       }
 
-      const days = viewMode === 'week'
-        ? (() => {
-            const startOfWeek = new Date(currentDate);
-            const day = startOfWeek.getDay();
-            startOfWeek.setDate(currentDate.getDate() - day);
-            return Array.from({ length: 7 }, (_, i) => new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + i));
-          })()
+      const days = (viewMode === 'week')
+        ? (() => { const s=new Date(currentDate); const d=s.getDay(); s.setDate(currentDate.getDate()-d); return Array.from({length:7},(_,i)=>new Date(s.getFullYear(),s.getMonth(),s.getDate()+i)); })()
         : (viewMode === 'year'
-            ? Array.from({ length: 12 }, (_, i) => new Date(currentDate.getFullYear(), i, 1))
-            : (() => {
-                const year = currentDate.getFullYear();
-                const month = currentDate.getMonth();
-                const firstDay = new Date(year, month, 1);
-                const startDate = new Date(firstDay);
-                startDate.setDate(startDate.getDate() - firstDay.getDay());
-                return Array.from({ length: 42 }, (_, i) => new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i));
-              })()
+            ? Array.from({length:12},(_,i)=>new Date(currentDate.getFullYear(), i, 1))
+            : (() => { const y=currentDate.getFullYear(), m=currentDate.getMonth(); const f=new Date(y,m,1); const s=new Date(f); s.setDate(s.getDate()-f.getDay()); return Array.from({length:42},(_,i)=>new Date(s.getFullYear(),s.getMonth(),s.getDate()+i)); })()
           );
 
       return (
@@ -628,10 +550,8 @@
           </div>
 
           {/* Notifications */}
-          {notifications.map(notification => (
-            <div key={notification.id} className={`notification ${notification.type} ${notification.show ? 'show' : ''}`}>
-              {notification.message}
-            </div>
+          {notifications.map(n => (
+            <div key={n.id} className={`notification ${n.type} ${n.show ? 'show' : ''}`}>{n.message}</div>
           ))}
 
           {/* Header */}
@@ -649,10 +569,9 @@
                     </h1>
                   </div>
                 </div>
-
                 {currentView === 'calendar' && (
                   <div className="flex bg-gray-100 rounded-lg p-1">
-                    {['week', 'month', 'year'].map(mode => (
+                    {['week','month','year'].map(mode => (
                       <button key={mode} onClick={() => setViewMode(mode)}
                         className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
                         {mode}
@@ -664,7 +583,7 @@
             </div>
           </div>
 
-          {/* Main Content - Calendar View */}
+          {/* Calendar View */}
           {currentView === 'calendar' && (
             <div className="max-w-7xl mx-auto px-6 py-8">
               <div className="bg-white rounded-xl shadow-sm border">
@@ -679,47 +598,35 @@
                 <div className="p-6">
                   {viewMode === 'year' ? (
                     <div className={`grid ${getGridColumns()} gap-4`}>
-                      {days.map((month, index) => {
-                        const monthLeaves = leaveRequests.filter(leave => {
-                          const leaveStart = new Date(leave.startDate);
-                          return leaveStart.getMonth() === month.getMonth() && leaveStart.getFullYear() === month.getFullYear();
+                      {days.map((month, idx) => {
+                        const monthLeaves = leaveRequests.filter(l => {
+                          const s = new Date(l.startDate);
+                          return s.getMonth()===month.getMonth() && s.getFullYear()===month.getFullYear();
                         });
-
-                        const employeeMap = new Map();
-                        monthLeaves.forEach(leave => {
-                          const employeeId = leave.employeeId;
-                          if (employeeMap.has(employeeId)) {
-                            const existing = employeeMap.get(employeeId);
-                            existing.totalDays += (leave.hours / 8);
-                          } else {
-                            employeeMap.set(employeeId, {
-                              employeeId: employeeId,
-                              status: leave.status,
-                              totalDays: (leave.hours / 8)
-                            });
-                          }
+                        const map = new Map();
+                        monthLeaves.forEach(l => {
+                          const id = l.employeeId;
+                          if (map.has(id)) map.get(id).totalDays += (l.hours/8);
+                          else map.set(id, { employeeId:id, status:l.status, totalDays:(l.hours/8) });
                         });
-                        const uniqueEmployeeLeaves = Array.from(employeeMap.values());
-
+                        const unique = Array.from(map.values());
                         return (
-                          <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+                          <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
                                onClick={() => { setCurrentDate(month); setViewMode('month'); }}>
                             <h3 className="font-medium text-gray-900 mb-2">{monthNames[month.getMonth()]}</h3>
                             <div className="space-y-1">
-                              {uniqueEmployeeLeaves.slice(0, 3).map(employeeLeave => {
-                                const employee = employees.find(emp => emp.id === employeeLeave.employeeId);
-                                if (!employee) return null;
+                              {unique.slice(0,3).map(u => {
+                                const emp = employees.find(e => e.id === u.employeeId);
+                                if (!emp) return null;
                                 return (
-                                  <div key={`${employeeLeave.employeeId}-${month.getMonth()}-${month.getFullYear()}`}
-                                       className={`text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(employeeLeave.status)}`}>
-                                    <span className="truncate">{employee.name.split(' ')[0]}</span>
-                                    <span className="text-xs ml-2">{employeeLeave.totalDays}d</span>
+                                  <div key={`${u.employeeId}-${month.getMonth()}-${month.getFullYear()}`}
+                                       className={`text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(u.status)}`}>
+                                    <span className="truncate">{emp.name.split(' ')[0]}</span>
+                                    <span className="text-xs ml-2">{u.totalDays}d</span>
                                   </div>
                                 );
                               })}
-                              {uniqueEmployeeLeaves.length > 3 && (
-                                <div className="text-xs text-gray-500">+{uniqueEmployeeLeaves.length - 3} more</div>
-                              )}
+                              {unique.length > 3 && <div className="text-xs text-gray-500">+{unique.length - 3} more</div>}
                             </div>
                           </div>
                         );
@@ -728,78 +635,55 @@
                   ) : (
                     <div>
                       <div className={`grid ${getGridColumns()} gap-1 mb-2`}>
-                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                          <div key={day} className="p-3 text-center text-sm font-medium text-gray-500">{day}</div>
+                        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                          <div key={d} className="p-3 text-center text-sm font-medium text-gray-500">{d}</div>
                         ))}
                       </div>
-
                       <div className={`grid ${getGridColumns()} gap-1`}>
-                        {days.map((date, index) => {
-                          const isCurrentMonth = viewMode === 'week' || date.getMonth() === currentDate.getMonth();
+                        {days.map((date, idx) => {
+                          const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                          const isWeekend = date.getDay()===0 || date.getDay()===6;
                           const dayLeaves = getLeaveForDate(date);
-
                           return (
-                            <div key={index}
-                                 className={`${viewMode === 'week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''
-                                 } ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
+                            <div key={idx}
+                                 className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
-                                  {viewMode === 'week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
+                                  {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
-
                                 {isCurrentMonth && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
-                                    setQuickLeaveForm({
-                                      employeeId: employees.length > 0 ? employees[0].id.toString() : '1',
-                                      days: 1,
-                                      type: 'Annual Leave'
-                                    });
+                                    setQuickLeaveForm({ employeeId: employees.length>0 ? String(employees[0].id) : '1', days: 1, type: 'Annual Leave' });
                                     setShowQuickLeaveModal(true);
                                   }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-600 cursor-pointer">+</span>
                                 )}
                               </div>
-
                               <div className="space-y-1">
                                 {dayLeaves.map(leave => {
                                   if (leave.isShutdown) {
-                                    return (
-                                      <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>
-                                        Workshop Closed
-                                      </div>
-                                    );
+                                    return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Workshop Closed</div>;
                                   }
                                   if (leave.isBankHoliday) {
-                                    return (
-                                      <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>
-                                        Bank Holiday
-                                      </div>
-                                    );
+                                    return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
-                                  const employee = employees.find(emp => emp.id === leave.employeeId);
+                                  const employee = employees.find(e => e.id === leave.employeeId);
                                   if (!employee) return null;
-
                                   return (
-                                    <div key={leave.id}
-                                         className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`}
-                                         title={leave.type}>
+                                    <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
                                       <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
-                                      <button
-                                        onClick={async () => {
-                                          if (confirm(\`Cancel leave for \${employee?.name}?\`)) {
-                                            setLeaveRequests(prev => prev.filter(req => req.id !== leave.id));
-                                            if (leave.type !== 'In Lieu') {
-                                              setEmployees(prev => prev.map(emp => emp.id === leave.employeeId ? { ...emp, usedLeave: emp.usedLeave - leave.hours } : emp));
-                                            }
-                                            await dbApi.deleteLeaveRequest(leave.id);
-                                            await syncData();
+                                      <button onClick={async () => {
+                                        if (confirm(`Cancel leave for ${employee?.name}?`)) {
+                                          setLeaveRequests(prev => prev.filter(r => r.id !== leave.id));
+                                          if (leave.type !== 'In Lieu') {
+                                            setEmployees(prev => prev.map(e => e.id === leave.employeeId ? { ...e, usedLeave: e.usedLeave - leave.hours } : e));
                                           }
-                                        }}
-                                        className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded"
-                                      >
+                                          await dbApi.deleteLeaveRequest(leave.id);
+                                          await syncData();
+                                        }
+                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
                                         <Icon name="x" className="h-2 w-2" />
                                       </button>
                                     </div>
@@ -827,13 +711,11 @@
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Add Workshop Shutdown Form */}
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                       <Icon name="factory" className="h-5 w-5 mr-2" />
                       Add Workshop Shutdown
                     </h3>
-
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Shutdown Name *</label>
@@ -842,21 +724,18 @@
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                placeholder="e.g., Christmas Break, Annual Maintenance" />
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
                         <input type="date" value={shutdownForm.startDate}
                                onChange={(e) => setShutdownForm(prev => ({...prev, startDate: e.target.value}))}
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
                         <input type="date" value={shutdownForm.endDate}
                                onChange={(e) => setShutdownForm(prev => ({...prev, endDate: e.target.value}))}
                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                         <textarea value={shutdownForm.description}
@@ -864,7 +743,6 @@
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                   rows={3} placeholder="Optional description..." />
                       </div>
-
                       <button onClick={saveWorkshopShutdown}
                               className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
                         Add Workshop Shutdown
@@ -872,10 +750,8 @@
                     </div>
                   </div>
 
-                  {/* Existing Workshop Shutdowns */}
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Existing Workshop Shutdowns</h3>
-
                     <div className="space-y-3">
                       {workshopShutdowns.length === 0 ? (
                         <p className="text-gray-500 text-sm italic">No workshop shutdowns scheduled</p>
@@ -889,15 +765,12 @@
                                 <Icon name="trash" className="h-4 w-4" />
                               </button>
                             </div>
-
                             <div className="pr-8">
                               <h4 className="font-medium text-gray-900">{shutdown.name}</h4>
                               <p className="text-sm text-gray-600 mt-1">
                                 {new Date(shutdown.startDate).toLocaleDateString()} - {new Date(shutdown.endDate).toLocaleDateString()}
                               </p>
-                              {shutdown.description && (
-                                <p className="text-sm text-gray-500 mt-2">{shutdown.description}</p>
-                              )}
+                              {shutdown.description && <p className="text-sm text-gray-500 mt-2">{shutdown.description}</p>}
                             </div>
                           </div>
                         ))
@@ -955,29 +828,15 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-gray-600">Total:</span>
-                              <p className="font-medium">{formatHours(employee.totalLeave)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Used:</span>
-                              <p className="font-medium">{formatHours(employee.usedLeave)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Remaining:</span>
-                              <p className="font-medium text-green-600">{formatHours(remainingHours)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Usage:</span>
-                              <p className="font-medium">{usagePercentage.toFixed(1)}%</p>
-                            </div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
-
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
                                  style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
                           </div>
-
                           {recentLeaves.length > 0 && (
                             <div className="mt-4">
                               <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Leave</h4>
@@ -1027,7 +886,7 @@
                       <option value="Workshop">Workshop</option>
                       <option value="Design">Design</option>
                       <option value="Sales">Sales</option>
-                      </select>
+                    </select>
                   </div>
 
                   <div>
@@ -1084,9 +943,7 @@
                     <select value={quickLeaveForm.employeeId}
                             onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
+                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                     </select>
                   </div>
 

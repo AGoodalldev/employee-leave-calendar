@@ -36,8 +36,8 @@
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
     import {
       getFirestore, enableIndexedDbPersistence,
-      collection, doc, getDocs, setDoc, deleteDoc,
-      query, orderBy, onSnapshot
+      collection, doc, getDocs, getDoc, setDoc, deleteDoc,
+      writeBatch, query, orderBy, Timestamp, onSnapshot
     } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -53,10 +53,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Offline-first cache
     enableIndexedDbPersistence(db).catch(() => {});
 
-    // Wait for anonymous auth so rules (request.auth != null) pass
     const ready = new Promise((resolve) => {
       let resolved = false;
       onAuthStateChanged(auth, (user) => {
@@ -64,14 +62,13 @@
       });
       signInAnonymously(auth).catch((err) => {
         console.error("Anon sign-in failed:", err);
-        if (!resolved) resolve(null); // allow local fallback
+        if (!resolved) resolve(null);
       });
     });
 
-    // Expose to the Babel script
     window.__fb = {
       app, auth, db, ready,
-      api: { collection, doc, getDocs, setDoc, deleteDoc, query, orderBy, onSnapshot }
+      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
     };
   </script>
 
@@ -79,11 +76,11 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
 
-    // Icon component
     const Icon = ({ name, className }) => {
       const paths = {
         calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
         menu: "M4 6h16M4 12h16M4 18h16",
+        users: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
         userAdd: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
         edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
         trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
@@ -93,7 +90,7 @@
         chevronLeft: "M15 19l-7-7 7-7",
         userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
         home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 00-1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
         factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
       };
       return (
@@ -112,15 +109,14 @@
         this.api = this.fb.api || {};
         this.unsubs = { employees: null, leaves: null, shutdowns: null };
       }
-
       _tsToDate(v) {
         if (!v) return null;
         if (v && typeof v.toDate === "function") return v.toDate();
         if (typeof v === "string") return new Date(v);
         return v instanceof Date ? v : null;
       }
+      _date(v){ return v instanceof Date ? v : new Date(v); }
 
-      // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
         if (!this.db) return () => {};
         const { collection, query, orderBy, onSnapshot } = this.api;
@@ -131,7 +127,6 @@
         });
         return this.unsubs.employees;
       }
-
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -146,7 +141,6 @@
         });
         return this.unsubs.leaves;
       }
-
       subscribeWorkshopShutdowns(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -162,7 +156,6 @@
         return this.unsubs.shutdowns;
       }
 
-      // ----- LOCAL FALLBACK FETCHES -----
       async fetchEmployees() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_employees');
@@ -176,7 +169,6 @@
         const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
         return snap.docs.map(d => d.data());
       }
-
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
@@ -190,7 +182,6 @@
           return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
         });
       }
-
       async fetchWorkshopShutdowns() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_workshop_shutdowns');
@@ -205,7 +196,6 @@
         });
       }
 
-      // ----- PER-DOC WRITES -----
       async upsertEmployee(emp) {
         if (!this.db) {
           const arr = await this.fetchEmployees();
@@ -217,7 +207,6 @@
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
       }
-
       async deleteEmployee(id) {
         if (!this.db) {
           const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
@@ -239,13 +228,11 @@
         const ref = doc(collection(this.db, "leave_requests"));
         await setDoc(ref, { ...leave, id: ref.id });
       }
-
       async updateLeave(leaveId, partial) {
         if (!this.db) return;
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
       }
-
       async deleteLeaveRequest(id) {
         if (!this.db) {
           const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
@@ -255,7 +242,6 @@
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "leave_requests", String(id)));
       }
-
       async createShutdown(s) {
         if (!this.db) {
           const arr = await this.fetchWorkshopShutdowns();
@@ -267,7 +253,6 @@
         const ref = doc(collection(this.db, "workshop_shutdowns"));
         await setDoc(ref, { ...s, id: ref.id });
       }
-
       async deleteWorkshopShutdown(id) {
         if (!this.db) {
           const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
@@ -296,7 +281,7 @@
       const [showSidebar, setShowSidebar] = useState(false);
       const [currentView, setCurrentView] = useState('calendar');
 
-      // Workshop shutdowns state
+      // Workshop shutdowns
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
 
@@ -346,11 +331,11 @@
         return hs;
       };
 
-      // Quick Leave form — start BLANK
+      // ✅ UPDATED: duration model "D:n"/"H:n"
       const [quickLeaveForm, setQuickLeaveForm] = useState({
-        employeeId: '',
-        duration: '', // D:n = days, H:n = hours
-        type: ''
+        employeeId: '1',
+        duration: 'D:1',
+        type: 'Annual Leave'
       });
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
@@ -358,6 +343,16 @@
 
       const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
+
+      // 🔹 Helpers for upcoming leave display
+      const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+      const formatDateRange = (start, end) => {
+        const s = new Date(start), e = new Date(end);
+        const same = s.toDateString() === e.toDateString();
+        const opts = { day: '2-digit', month: '2-digit', year: 'numeric' };
+        return same ? s.toLocaleDateString(undefined, opts)
+                    : `${s.toLocaleDateString(undefined, opts)} - ${e.toLocaleDateString(undefined, opts)}`;
+      };
 
       const getMonthDays = () => {
         const y=currentDate.getFullYear(), m=currentDate.getMonth();
@@ -390,86 +385,16 @@
       };
       const getGridColumns = () => viewMode==='year' ? 'grid-cols-4' : 'grid-cols-7';
 
-      // ------ Helpers for business-day logic and duration parsing ------
-      const isWeekendDate = (d) => {
-        const dow = d.getDay();
-        return dow === 0 || dow === 6; // Sun=0, Sat=6
-      };
-
-      const addBusinessDays = (start, days) => {
-        const d = new Date(start);
-        let added = 0;
-        while (added < days) {
-          d.setDate(d.getDate() + 1);
-          if (!isWeekendDate(d)) added += 1;
-        }
-        return d;
-      };
-
-      const parseDuration = (code) => {
-        if (!code) return null;
-        const [unit, valueStr] = code.split(':');
-        const n = parseInt(valueStr, 10);
-        if (!['H','D'].includes(unit) || isNaN(n) || n < 1) return null;
-        const hours = unit === 'H' ? n : n * 8;
-        const days = unit === 'D' ? n : 0;
-        return { unit, n, hours, days };
-      };
-
-      const getBankHolidayForDate = (date) => {
-        const bhList = getBankHolidays(date.getFullYear());
-        return bhList.find(h => h.date.toDateString() === date.toDateString());
-      };
-
-      // Compute USED hours for given employee & calendar year (weekdays only for multi-day)
-      const computeUsedHoursForYear = (employeeId, year) => {
-        const rel = leaveRequests.filter(l =>
-          l.employeeId === employeeId &&
-          l.status === 'approved' &&
-          l.type !== 'In Lieu'
-        );
-        let total = 0;
-        for (const l of rel) {
-          const s = new Date(l.startDate);
-          const e = new Date(l.endDate);
-
-          // Single-day (hours or 1 day)
-          if (s.toDateString() === e.toDateString()) {
-            if (s.getFullYear() === year) total += (l.hours || 0);
-            continue;
-          }
-
-          // Multi-day: count 8h for each weekday within range that falls in target year
-          const d = new Date(s);
-          while (d <= e) {
-            if (!isWeekendDate(d) && d.getFullYear() === year) total += 8;
-            d.setDate(d.getDate() + 1);
-          }
-        }
-        return total;
-      };
-
-      // ---- Leave on a specific date (hide regular leave on weekends) ----
       const getLeaveForDate = (date) => {
-        const isWeekend = isWeekendDate(date);
-
-        // Regular leaves that span this date
-        const regs = isWeekend
-          ? [] // hide employee leave on weekend cells
-          : leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
-
-        // Shutdowns that span this date
+        const regs = leaveRequests.filter(l => date >= new Date(l.startDate) && date <= new Date(l.endDate));
         const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
-
-        // Bank holiday on this date
-        const bh = getBankHolidayForDate(date);
-
+        const bhList = getBankHolidays(date.getFullYear());
+        const bh = bhList.find(h => h.date.toDateString() === date.toDateString());
         const res = [...regs];
         shut.forEach(s => res.push({ id:`shutdown-${s.id}`, type:'Workshop Shutdown', status:'shutdown', isShutdown:true, name:s.name }));
         if (bh) res.push({ id:`bankholiday-${bh.name.replace(/\s+/g,'-')}`, type:'Bank Holiday', status:'bankholiday', isBankHoliday:true, name:bh.name });
         return res;
       };
-
       const getStatusColor = (status) => {
         switch(status){
           case 'approved': return 'bg-green-100 text-green-800';
@@ -480,10 +405,9 @@
         }
       };
 
-      // ---------- INITIALISE ----------
+      // ---------- INIT ----------
       useEffect(() => {
         let unsubEmp = null, unsubLeave = null, unsubShut = null;
-
         const init = async () => {
           if (window.__fb?.ready) { await window.__fb.ready; }
           if (window.__fb?.db) {
@@ -500,53 +424,36 @@
           setIsLoading(false);
           setTimeout(() => setShowConnectionIndicator(false), 3000);
         };
-
         init();
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
       const saveQuickLeave = async () => {
-        // Required selections
-        if (!quickLeaveForm.employeeId) { addNotification('Please select an employee', 'error'); return; }
-        if (!quickLeaveForm.duration)   { addNotification('Please select a duration', 'error'); return; }
-        if (!quickLeaveForm.type)       { addNotification('Please select a leave type', 'error'); return; }
-
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        const dur = parseDuration(quickLeaveForm.duration);
-        if (!dur) { addNotification('Invalid duration', 'error'); return; }
+        const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
 
         const start = new Date(selectedDate);
+        const end = new Date(selectedDate);
+        if (!isHours && n > 1) end.setDate(start.getDate() + n - 1);
 
-        // Block day-based leave starting on weekends
-        if (dur.unit === 'D' && isWeekendDate(start)) {
-          addNotification('Day-based leave must start on a weekday', 'error');
-          return;
-        }
-
-        // Compute end date (skip weekends for day-based)
-        let end = new Date(selectedDate);
-        if (dur.unit === 'D') {
-          end = dur.n > 1 ? addBusinessDays(start, dur.n - 1) : new Date(start);
-        }
+        const totalHours = isHours ? n : n * 8;
 
         const newLeave = {
           employeeId: parseInt(quickLeaveForm.employeeId),
           startDate: start, endDate: end,
-          type: quickLeaveForm.type, status: 'approved', hours: dur.hours
+          type: quickLeaveForm.type, status: 'approved', hours: totalHours
         };
 
-        // Optimistic UI (no immediate usedLeave impact for next-year bookings)
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
-
-        // Optionally maintain employees.usedLeave for THIS calendar year only (for external compatibility)
-        const currentYear = new Date().getFullYear();
-        if (quickLeaveForm.type !== 'In Lieu' && start.getFullYear() === currentYear) {
+        if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
-            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + dur.hours };
+            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -604,7 +511,7 @@
       const openEmployeeModal = (employee=null) => {
         if (employee) {
           setEditingEmployee(employee);
-          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave || 0), color: employee.color });
+          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave), color: employee.color });
         } else {
           setEditingEmployee(null);
           setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
@@ -759,36 +666,24 @@
                         {days.map((date, idx) => {
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekendCell = isWeekendDate(date);
+                          const isWeekend = date.getDay()===0 || date.getDay()===6;
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekendCell ? 'bg-gray-100' : ''}`}>
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
-
-                                {/* Hide/disable + on weekends */}
-                                {isCurrentMonth && !isWeekendCell && (
-                                  <span
-                                    onClick={() => {
-                                      setSelectedDate(date);
-                                      setQuickLeaveForm({ employeeId: '', duration: '', type: '' });
-                                      setShowQuickLeaveModal(true);
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer"
-                                  >+</span>
-                                )}
-                                {isCurrentMonth && isWeekendCell && (
-                                  <span
-                                    title="Weekends disabled for quick add"
-                                    className="opacity-0 group-hover:opacity-60 w-5 h-5 rounded-full bg-gray-300 text-white flex items-center justify-center text-xs cursor-not-allowed"
-                                  >+</span>
+                                {isCurrentMonth && !isWeekend && (
+                                  <span onClick={() => {
+                                    setSelectedDate(date);
+                                    setQuickLeaveForm({ employeeId: employees.length>0 ? String(employees[0].id) : '1', duration: 'D:1', type: 'Annual Leave' });
+                                    setShowQuickLeaveModal(true);
+                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
                                 )}
                               </div>
-
                               <div className="space-y-1">
                                 {dayLeaves.map(leave => {
                                   if (leave.isShutdown) {
@@ -798,19 +693,16 @@
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
                                   const employee = employees.find(e => e.id === leave.employeeId);
-                                  if (!employee) return null;
+                                  if (!employee || isWeekend) return null; // hide employee leaves on weekends
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
                                       <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          // Only adjust employees.usedLeave if the leave was in the current year
-                                          const currentYear = new Date().getFullYear();
-                                          const startYear = new Date(leave.startDate).getFullYear();
-                                          if (leave.type !== 'In Lieu' && startYear === currentYear) {
+                                          if (leave.type !== 'In Lieu') {
                                             const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - (leave.hours || 0)) });
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -928,15 +820,15 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const currentYear = new Date().getFullYear();
-                    const usedHours = computeUsedHoursForYear(employee.id, currentYear);
-                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHours);
-                    const usagePercentage = Math.min(100, Math.max(0, (usedHours / (employee.totalLeave || 1)) * 100));
+                    const remainingHours = employee.totalLeave - employee.usedLeave;
+                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
 
-                    const recentLeaves = leaveRequests
-                      .filter(leave => leave.employeeId === employee.id)
-                      .sort((a,b) => new Date(b.startDate) - new Date(a.startDate))
-                      .slice(0, 3);
+                    // 🔹 Next upcoming leave for this employee
+                    const today = atMidnight(new Date());
+                    const upcomingLeave = leaveRequests
+                      .filter(l => l.employeeId === employee.id)
+                      .filter(l => atMidnight(l.startDate) >= today)
+                      .sort((a,b) => atMidnight(a.startDate) - atMidnight(b.startDate))[0];
 
                     return (
                       <div key={employee.id}
@@ -965,8 +857,8 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
-                            <div><span className="text-gray-600">Used ({currentYear}):</span><p className="font-medium">{formatHours(usedHours)}</p></div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
                             <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
@@ -974,19 +866,28 @@
                             <div className="h-3 rounded-full transition-all duration-300"
                                  style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
                           </div>
-                          {recentLeaves.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Leave</h4>
-                              <div className="space-y-1">
-                                {recentLeaves.map(leave => (
-                                  <div key={leave.id} className="flex justify-between items-center text-xs">
-                                    <span className={`px-2 py-1 rounded ${getStatusColor(leave.status)}`}>{leave.type}</span>
-                                    <span className="text-gray-500">{new Date(leave.startDate).toLocaleDateString()}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+
+                          {/* 🔹 Next Leave block */}
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Next Leave</h4>
+                            {upcomingLeave ? (
+                              <>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className={`px-2 py-1 rounded ${getStatusColor(upcomingLeave.status)}`}>
+                                    {upcomingLeave.type}
+                                  </span>
+                                  <span className="text-gray-500">
+                                    {formatDateRange(upcomingLeave.startDate, upcomingLeave.endDate)}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Duration: {formatHours(upcomingLeave.hours)}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-xs text-gray-400 italic">No upcoming leave</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1066,124 +967,69 @@
           )}
 
           {/* Quick Leave Modal */}
-          {showQuickLeaveModal && selectedDate && (() => {
-            const dur = parseDuration(quickLeaveForm.duration);
-            const start = new Date(selectedDate);
-            const startIsWeekend = isWeekendDate(start);
+          {showQuickLeaveModal && selectedDate && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Quick Add Leave - {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={() => setShowQuickLeaveModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
 
-            // Preview text & computed end date (business days for D:n)
-            let end = new Date(start);
-            let previewText = '';
-            if (dur) {
-              if (dur.unit === 'D') {
-                end = dur.n > 1 ? addBusinessDays(start, dur.n - 1) : new Date(start);
-                previewText = `${dur.n} day${dur.n === 1 ? '' : 's'} (${dur.hours}h)`;
-              } else {
-                previewText = `${dur.hours} hour${dur.hours === 1 ? '' : 's'}`;
-              }
-            }
-
-            // Form validity: block day-based leave if start on weekend
-            const baseValid = !!quickLeaveForm.employeeId && !!quickLeaveForm.duration && !!quickLeaveForm.type;
-            const dayBasedInvalid = !!dur && dur.unit === 'D' && startIsWeekend;
-            const formValid = baseValid && !dayBasedInvalid;
-
-            return (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">Quick Add Leave - {start.toLocaleDateString()}</h3>
-                    <button onClick={() => setShowQuickLeaveModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
+                    <select value={quickLeaveForm.employeeId}
+                            onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Employee</option>
+                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    </select>
                   </div>
 
-                  {/* Warning for weekend start when day-based */}
-                  {dayBasedInvalid && (
-                    <div className="mb-4 p-3 rounded-md bg-yellow-50 text-yellow-800 text-sm">
-                      Day-based leave must start on a weekday. Pick a weekday on the calendar, or choose an hourly duration.
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                    <select value={quickLeaveForm.duration}
+                            onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Duration</option>
+                      <optgroup label="Hours">
+                        <option value="H:1">1 Hour</option>
+                        <option value="H:2">2 Hours</option>
+                        <option value="H:3">3 Hours</option>
+                        <option value="H:4">4 Hours</option>
+                        <option value="H:5">5 Hours</option>
+                        <option value="H:6">6 Hours</option>
+                        <option value="H:7">7 Hours</option>
+                      </optgroup>
+                      <optgroup label="Days">
+                        <option value="D:1">1 Day (8 hours)</option>
+                        <option value="D:2">2 Days (16 hours)</option>
+                        <option value="D:3">3 Days (24 hours)</option>
+                        <option value="D:4">4 Days (32 hours)</option>
+                        <option value="D:5">5 Days (40 hours)</option>
+                      </optgroup>
+                    </select>
+                  </div>
 
-                  <div className="space-y-4">
-                    {/* Employee */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
-                      <select
-                        value={quickLeaveForm.employeeId}
-                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select Employee</option>
-                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
+                    <select value={quickLeaveForm.type}
+                            onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Leave Type</option>
+                      <option value="Annual Leave">Annual Leave</option>
+                      <option value="In Lieu">In Lieu</option>
+                    </select>
+                  </div>
 
-                    {/* Number of Days/Hours */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
-                      <select
-                        value={quickLeaveForm.duration}
-                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select Duration</option>
-                        <optgroup label="Hours">
-                          <option value="H:1">1 Hour</option>
-                          <option value="H:2">2 Hours</option>
-                          <option value="H:3">3 Hours</option>
-                          <option value="H:4">4 Hours</option>
-                          <option value="H:5">5 Hours</option>
-                          <option value="H:6">6 Hours</option>
-                          <option value="H:7">7 Hours</option>
-                        </optgroup>
-                        <optgroup label="Days">
-                          <option value="D:1">1 Day (8 hours)</option>
-                          <option value="D:2">2 Days (16 hours)</option>
-                          <option value="D:3">3 Days (24 hours)</option>
-                          <option value="D:4">4 Days (32 hours)</option>
-                          <option value="D:5">5 Days (40 hours)</option>
-                        </optgroup>
-                      </select>
-
-                      {/* Live preview */}
-                      {dur && (
-                        <p className="mt-2 text-sm text-gray-600">
-                          This will book <span className="font-medium">{previewText}</span>
-                          {dur.unit === 'D' && !dayBasedInvalid && (
-                            <> from <span className="font-medium">{start.toLocaleDateString()}</span> to <span className="font-medium">{end.toLocaleDateString()}</span> (weekends skipped)</>
-                          )}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Leave Type */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
-                      <select
-                        value={quickLeaveForm.type}
-                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select Leave Type</option>
-                        <option value="Annual Leave">Annual Leave</option>
-                        <option value="In Lieu">In Lieu</option>
-                      </select>
-                    </div>
-
-                    <div className="flex justify-end space-x-3 pt-4">
-                      <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
-                      <button
-                        onClick={saveQuickLeave}
-                        disabled={!formValid}
-                        className={`px-4 py-2 rounded-lg text-white ${formValid ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 opacity-50 cursor-not-allowed'}`}
-                      >
-                        Add Leave
-                      </button>
-                    </div>
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button onClick={saveQuickLeave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Leave</button>
                   </div>
                 </div>
               </div>
-            );
-          })()}
+            </div>
+          )}
         </div>
       );
     };

@@ -8,7 +8,7 @@
   <!-- prevent favicon 404 noise -->
   <link rel="icon" href="data:,">
 
-  <!-- React / Tailwind / Babel -->
+  <!-- React / Tailwind / Babel (dev-friendly) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -97,7 +97,7 @@
         chevronLeft: "M15 19l-7-7 7-7",
         userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
         home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756.426-1.756 2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
         factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
       };
       return (
@@ -137,7 +137,7 @@
         return this.unsubs.employees;
       }
 
-      // ensure every leave row has a usable id (doc id fallback)
+      // Ensure each leave has a usable id (doc id fallback)
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -188,7 +188,6 @@
         return snap.docs.map(d => d.data());
       }
 
-      // id fallback for initial fetch
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
@@ -263,7 +262,6 @@
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
       }
 
-      // defensive delete by id
       async deleteLeaveRequest(id) {
         if (!id) { console.warn("deleteLeaveRequest called without id"); return; }
         if (!this.db) {
@@ -299,7 +297,7 @@
     }
 
     const LeaveCalendar = () => {
-      // State management
+      // State
       const [currentDate, setCurrentDate] = useState(new Date());
       const [viewMode, setViewMode] = useState('month');
       const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
@@ -315,7 +313,7 @@
       const [showSidebar, setShowSidebar] = useState(false);
       const [currentView, setCurrentView] = useState('calendar');
 
-      // Workshop shutdowns state
+      // Workshop shutdowns
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
 
@@ -340,7 +338,7 @@
         };
       }, []);
 
-      // Bank holidays helpers
+      // ---- Bank holidays helpers (UK) ----
       const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const getEasterDate = (year) => {
         const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
@@ -355,26 +353,25 @@
         return new Date(year,month,lastDay.getDate()-sub);
       };
       const getBankHolidays = (year) => {
-  const hs = [];
-  hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+        const hs = [];
+        hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
 
-  const easter = getEasterDate(year);
-  const gf = new Date(easter);
-  const em = new Date(easter);
-  gf.setDate(easter.getDate() - 2); // Good Friday
-  em.setDate(easter.getDate() + 1); // Easter Monday
+        const easter = getEasterDate(year);
+        const gf = new Date(easter);
+        const em = new Date(easter);
+        gf.setDate(easter.getDate() - 2); // Good Friday
+        em.setDate(easter.getDate() + 1); // Easter Monday
 
-  hs.push({ name: "Good Friday", date: gf });
-  hs.push({ name: "Easter Monday", date: em });
-  hs.push({ name: "Early May Bank Holiday", date: getFirstMondayOfMonth(year, 4) });
-  hs.push({ name: "Spring Bank Holiday", date: getLastMondayOfMonth(year, 4) });
-  hs.push({ name: "Summer Bank Holiday", date: getLastMondayOfMonth(year, 7) });
-  hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
-  hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+        hs.push({ name: "Good Friday", date: gf });
+        hs.push({ name: "Easter Monday", date: em });
+        hs.push({ name: "Early May Bank Holiday", date: getFirstMondayOfMonth(year, 4) });
+        hs.push({ name: "Spring Bank Holiday", date: getLastMondayOfMonth(year, 4) });
+        hs.push({ name: "Summer Bank Holiday", date: getLastMondayOfMonth(year, 7) });
+        hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+        hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
 
-  return hs;
-};
-
+        return hs;
+      };
 
       // ---- working-day helpers (weekends + bank holidays) ----
       const isSameDay = (a, b) => a.toDateString() === b.toDateString();
@@ -410,6 +407,8 @@
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
 
       const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
+      const formatQty = (n, word) => `${n} ${word}${n===1?'':'s'}`;
+      const formatHoursVerbose = (h) => h%8===0 ? formatQty(h/8,'day') : formatQty(h,'hour');
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
       const getMonthDays = () => {
@@ -461,18 +460,15 @@
           name: s.name
         }));
 
-        if (!isWorkingDay(date)) {
-          // separately show bank holiday label (weekends just get grey background)
-          if (isBankHolidayDate(date)) {
-            const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
-            res.push({
-              id: `bankholiday-${bh.name.replace(/\s+/g,'-')}`,
-              type: 'Bank Holiday',
-              status: 'bankholiday',
-              isBankHoliday: true,
-              name: bh.name
-            });
-          }
+        if (!isWorkingDay(date) && isBankHolidayDate(date)) {
+          const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
+          res.push({
+            id: `bankholiday-${bh.name.replace(/\s+/g,'-')}`,
+            type: 'Bank Holiday',
+            status: 'bankholiday',
+            isBankHoliday: true,
+            name: bh.name
+          });
         }
 
         return res;
@@ -522,12 +518,11 @@
         let start = nextWorkingDay(new Date(selectedDate));
         let end   = new Date(start);
 
-        if (isHours) {
-          // hours stay on the same (next working) day
-        } else {
+        if (!isHours) {
           // days: skip weekends + bank holidays
           end = addWorkingDays(start, n);
         }
+        // hours stay on a single working day
 
         const totalHours = isHours ? n : n * 8;
 
@@ -543,14 +538,8 @@
         // Optimistic UI
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
-        if (quickLeaveForm.type !== 'In Lieu') {
-          const changed = employees.find(e => e.id === newLeave.employeeId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
-            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-            await dbApi.upsertEmployee(updated);
-          }
-        }
+        // NOTE: We no longer mutate employee.usedLeave here.
+        // Balances are derived live from leaveRequests for the current calendar year.
 
         await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
@@ -610,6 +599,25 @@
           setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
         }
         setShowEmployeeModal(true);
+      };
+
+      // ---- Derived helpers for balances & upcoming leave ----
+      const currentYear = new Date().getFullYear();
+      const usedThisYearHours = (empId) =>
+        leaveRequests.reduce((sum, l) => {
+          if (l.employeeId !== empId) return sum;
+          if (l.type === 'In Lieu') return sum;
+          const sd = new Date(l.startDate);
+          if (sd.getFullYear() !== currentYear) return sum;
+          return sum + (l.hours || 0);
+        }, 0);
+
+      const getUpcomingLeave = (empId) => {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const list = leaveRequests
+          .filter(l => l.employeeId === empId && new Date(l.startDate) >= today)
+          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        return list[0] || null;
       };
 
       if (isLoading) {
@@ -761,7 +769,6 @@
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
                           const weekend = isWeekendDay(date);
-                          const nonWorking = !isWorkingDay(date);
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
@@ -796,10 +803,7 @@
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          if (leave.type !== 'In Lieu') {
-                                            const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
-                                          }
+                                          // No employee.usedLeave mutation here; UI derives balances live.
                                           addNotification('Leave removed', 'success');
                                         }
                                       }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
@@ -916,9 +920,12 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
-                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
+                    const total = employee.totalLeave || 0;
+                    const used = usedThisYearHours(employee.id);
+                    const remaining = Math.max(0, total - used);
+                    const usagePercentage = total ? (used / total) * 100 : 0;
+
+                    const upcoming = getUpcomingLeave(employee.id);
 
                     return (
                       <div key={employee.id}
@@ -947,28 +954,29 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(total)}</p></div>
+                            <div><span className="text-gray-600">Used (this year):</span><p className="font-medium">{formatHours(used)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remaining)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
                                  style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
                           </div>
-                          {recentLeaves.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Leave</h4>
-                              <div className="space-y-1">
-                                {recentLeaves.map(leave => (
-                                  <div key={leave.id} className="flex justify-between items-center text-xs">
-                                    <span className={`px-2 py-1 rounded ${getStatusColor(leave.status)}`}>{leave.type}</span>
-                                    <span className="text-gray-500">{new Date(leave.startDate).toLocaleDateString()}</span>
-                                  </div>
-                                ))}
+
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Next Leave</h4>
+                            {upcoming ? (
+                              <div className="flex items-center justify-between text-xs">
+                                <span className={`px-2 py-1 rounded ${getStatusColor(upcoming.status)}`}>{upcoming.type}</span>
+                                <span className="text-gray-500">
+                                  {new Date(upcoming.startDate).toLocaleDateString()} • {formatHoursVerbose(upcoming.hours || 0)}
+                                </span>
                               </div>
-                            </div>
-                          )}
+                            ) : (
+                              <p className="text-xs text-gray-500 italic">No upcoming leave</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

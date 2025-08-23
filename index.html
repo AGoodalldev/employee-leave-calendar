@@ -1,675 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atkin Guitars Leave Calendar</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        .connection-indicator { 
-            position: fixed; top: 20px; right: 20px; z-index: 1000; padding: 8px 16px; 
-            border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 8px; 
-            transition: opacity 0.3s; 
-        }
-        .connection-indicator.hide { opacity: 0; transform: translateX(100%); }
-        .connected { background-color: #10B981; color: white; }
-        .disconnected { background-color: #EF4444; color: white; }
-        .sidebar { 
-            position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; 
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); 
-            transition: transform 0.3s; z-index: 1000; 
-        }
-        .sidebar.open { transform: translateX(0); }
-        .sidebar-overlay { 
-            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; 
-            opacity: 0; visibility: hidden; transition: all 0.3s; 
-        }
-        .sidebar-overlay.show { opacity: 1; visibility: visible; }
-        .notification { 
-            position: fixed; top: 80px; right: 20px; z-index: 1000; padding: 12px 16px; 
-            border-radius: 8px; color: white; transform: translateX(100%); transition: transform 0.3s; 
-        }
-        .notification.show { transform: translateX(0); }
-        .notification.success { background-color: #10B981; }
-        .notification.error { background-color: #EF4444; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
-        
-        // Icon component
-        const Icon = ({ name, className }) => {
-            const paths = {
-                calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-                menu: "M4 6h16M4 12h16M4 18h16",
-                users: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
-                userAdd: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
-                edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-                trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
-                x: "M6 18L18 6M6 6l12 12",
-                wifi: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0",
-                wifiOff: "M18.364 5.636l-12.728 12.728m0 0L1.394 14.122m4.242 4.242a5.5 5.5 0 007.778 0m7.778-7.778a10.97 10.97 0 00-3.536-2.464m-6.242 6.242L7.758 8.879m0 0a10.97 10.97 0 00-3.536 2.464",
-                chevronLeft: "M15 19l-7-7 7-7",
-                userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
-                home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-                settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
-                factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
-            };
-            return (
-                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
-                </svg>
-            );
-        };
-
-        // Database API
-        class DatabaseAPI {
-            constructor() {
-                this.isOnline = navigator.onLine;
-            }
-
-            async fetchEmployees() {
-                const stored = localStorage.getItem('atkin_employees');
-                return stored ? JSON.parse(stored) : [
-                    { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
-                    { id: 2, name: 'Michael Chen', department: 'Finishing', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
-                    { id: 3, name: 'Emma Davis', department: 'Administration', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
-                ];
-            }
-
-            async fetchLeaveRequests() {
-                const stored = localStorage.getItem('atkin_leave_requests');
-                if (stored) {
-                    return JSON.parse(stored).map(req => ({
-                        ...req, 
-                        startDate: new Date(req.startDate), 
-                        endDate: new Date(req.endDate)
-                    }));
-                }
-                return [{
-                    id: 1, employeeId: 1, startDate: new Date(2025, 7, 25), 
-                    endDate: new Date(2025, 7, 29), type: 'Annual Leave', 
-                    status: 'approved', hours: 40
-                }];
-            }
-
-            async fetchWorkshopShutdowns() {
-                const stored = localStorage.getItem('atkin_workshop_shutdowns');
-                if (stored) {
-                    return JSON.parse(stored).map(shutdown => ({
-                        ...shutdown,
-                        startDate: new Date(shutdown.startDate),
-                        endDate: new Date(shutdown.endDate)
-                    }));
-                }
-                return [];
-            }
-
-            async saveData(type, data) {
-                if (type === 'leave_requests') {
-                    const serialized = data.map(req => ({
-                        ...req,
-                        startDate: req.startDate.toISOString(),
-                        endDate: req.endDate.toISOString()
-                    }));
-                    localStorage.setItem('atkin_leave_requests', JSON.stringify(serialized));
-                } else {
-                    localStorage.setItem('atkin_employees', JSON.stringify(data));
-                }
-            }
-
-            async saveWorkshopShutdowns(shutdowns) {
-                const serialized = shutdowns.map(shutdown => ({
-                    ...shutdown,
-                    startDate: shutdown.startDate.toISOString(),
-                    endDate: shutdown.endDate.toISOString()
-                }));
-                localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(serialized));
-            }
-        }
-
-        const LeaveCalendar = () => {
-          // State management
-          const [currentDate, setCurrentDate] = useState(new Date());
-          const [viewMode, setViewMode] = useState('month');
-          const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
-          const [showEmployeeModal, setShowEmployeeModal] = useState(false);
-          const [selectedDate, setSelectedDate] = useState(null);
-          const [editingEmployee, setEditingEmployee] = useState(null);
-          const [connectionStatus, setConnectionStatus] = useState('connected');
-          const [showConnectionIndicator, setShowConnectionIndicator] = useState(true);
-          const [notifications, setNotifications] = useState([]);
-          const [employees, setEmployees] = useState([]);
-          const [leaveRequests, setLeaveRequests] = useState([]);
-          const [isLoading, setIsLoading] = useState(true);
-          const [showSidebar, setShowSidebar] = useState(false);
-          const [currentView, setCurrentView] = useState('calendar');
-          const [dbApi] = useState(() => new DatabaseAPI());
-
-          // Workshop shutdowns state
-          const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
-          const [shutdownForm, setShutdownForm] = useState({
-            name: '', startDate: '', endDate: '', description: ''
-          });
-
-          // Bank holidays for England
-          const getBankHolidays = (year) => {
-            const holidays = [];
-            
-            // Fixed dates
-            holidays.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
-            
-            // Good Friday (2 days before Easter Sunday)
-            const easter = getEasterDate(year);
-            const goodFriday = new Date(easter);
-            goodFriday.setDate(easter.getDate() - 2);
-            holidays.push({ name: "Good Friday", date: goodFriday });
-            
-            // Easter Monday (1 day after Easter Sunday)
-            const easterMonday = new Date(easter);
-            easterMonday.setDate(easter.getDate() + 1);
-            holidays.push({ name: "Easter Monday", date: easterMonday });
-            
-            // Early May Bank Holiday (first Monday in May)
-            const mayBankHoliday = getFirstMondayOfMonth(year, 4); // May is month 4
-            holidays.push({ name: "Early May Bank Holiday", date: mayBankHoliday });
-            
-            // Spring Bank Holiday (last Monday in May)
-            const springBankHoliday = getLastMondayOfMonth(year, 4);
-            holidays.push({ name: "Spring Bank Holiday", date: springBankHoliday });
-            
-            // Summer Bank Holiday (last Monday in August)
-            const summerBankHoliday = getLastMondayOfMonth(year, 7); // August is month 7
-            holidays.push({ name: "Summer Bank Holiday", date: summerBankHoliday });
-            
-            // Christmas Day
-            holidays.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
-            
-            // Boxing Day
-            holidays.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
-            
-            return holidays;
-          };
-
-          // Calculate Easter date using the algorithm
-          const getEasterDate = (year) => {
-            const a = year % 19;
-            const b = Math.floor(year / 100);
-            const c = year % 100;
-            const d = Math.floor(b / 4);
-            const e = b % 4;
-            const f = Math.floor((b + 8) / 25);
-            const g = Math.floor((b - f + 1) / 3);
-            const h = (19 * a + b - d - g + 15) % 30;
-            const i = Math.floor(c / 4);
-            const k = c % 4;
-            const l = (32 + 2 * e + 2 * i - h - k) % 7;
-            const m = Math.floor((a + 11 * h + 22 * l) / 451);
-            const n = Math.floor((h + l - 7 * m + 114) / 31);
-            const p = (h + l - 7 * m + 114) % 31;
-            return new Date(year, n - 1, p + 1);
-          };
-
-          // Get first Monday of a month
-          const getFirstMondayOfMonth = (year, month) => {
-            const firstDay = new Date(year, month, 1);
-            const dayOfWeek = firstDay.getDay();
-            const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-            return new Date(year, month, 1 + daysUntilMonday);
-          };
-
-          // Get last Monday of a month
-          const getLastMondayOfMonth = (year, month) => {
-            const lastDay = new Date(year, month + 1, 0); // Last day of the month
-            const dayOfWeek = lastDay.getDay();
-            const daysToSubtract = dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            return new Date(year, month, lastDay.getDate() - daysToSubtract);
-          };
-
-          const [quickLeaveForm, setQuickLeaveForm] = useState({
-            employeeId: '1', days: 1, type: 'Annual Leave'
-          });
-          const [employeeForm, setEmployeeForm] = useState({
-            name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6'
-          });
-
-          const colorOptions = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
-          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-          // Helper functions
-          const addNotification = useCallback((message, type = 'info') => {
-            const id = Date.now();
-            setNotifications(prev => [...prev, { id, message, type, show: false }]);
-            setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show: true } : n)), 100);
-            setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
-          }, []);
-
-          const formatHours = (hours) => {
-            const days = Math.floor(hours / 8);
-            const remainingHours = hours % 8;
-            return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-          };
-
-          const generateInitials = (name) => name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
-
-          const getCalendarDays = () => {
-            if (viewMode === 'week') {
-              return getWeekDays();
-            } else if (viewMode === 'year') {
-              return getYearMonths();
-            } else {
-              return getMonthDays();
-            }
-          };
-
-          const getMonthDays = () => {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-            const firstDay = new Date(year, month, 1);
-            const startDate = new Date(firstDay);
-            startDate.setDate(startDate.getDate() - firstDay.getDay());
-            const days = [];
-            for (let i = 0; i < 42; i++) {
-              days.push(new Date(startDate));
-              startDate.setDate(startDate.getDate() + 1);
-            }
-            return days;
-          };
-
-          const getWeekDays = () => {
-            const startOfWeek = new Date(currentDate);
-            const day = startOfWeek.getDay();
-            startOfWeek.setDate(currentDate.getDate() - day);
-            const days = [];
-            for (let i = 0; i < 7; i++) {
-              const day = new Date(startOfWeek);
-              day.setDate(startOfWeek.getDate() + i);
-              days.push(day);
-            }
-            return days;
-          };
-
-          const getYearMonths = () => {
-            const year = currentDate.getFullYear();
-            const months = [];
-            for (let i = 0; i < 12; i++) {
-              months.push(new Date(year, i, 1));
-            }
-            return months;
-          };
-
-          const navigateCalendar = (direction) => {
-            setCurrentDate(prev => {
-              const newDate = new Date(prev);
-              if (viewMode === 'week') {
-                newDate.setDate(prev.getDate() + (direction * 7));
-              } else if (viewMode === 'year') {
-                newDate.setFullYear(prev.getFullYear() + direction);
-              } else {
-                newDate.setMonth(prev.getMonth() + direction);
-              }
-              return newDate;
-            });
-          };
-
-          const getViewTitle = () => {
-            if (viewMode === 'week') {
-              const startOfWeek = new Date(currentDate);
-              const day = startOfWeek.getDay();
-              startOfWeek.setDate(currentDate.getDate() - day);
-              const endOfWeek = new Date(startOfWeek);
-              endOfWeek.setDate(startOfWeek.getDate() + 6);
-              
-              if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
-                return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()}-${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
-              } else {
-                return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()} - ${monthNames[endOfWeek.getMonth()]} ${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
-              }
-            } else if (viewMode === 'year') {
-              return currentDate.getFullYear().toString();
-            } else {
-              return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
-            }
-          };
-
-          const getGridColumns = () => {
-            if (viewMode === 'week') return 'grid-cols-7';
-            if (viewMode === 'year') return 'grid-cols-4';
-            return 'grid-cols-7';
-          };
-
-          const getLeaveForDate = (date) => {
-            const regularLeave = leaveRequests.filter(leave => {
-              const leaveStart = new Date(leave.startDate);
-              const leaveEnd = new Date(leave.endDate);
-              return date >= leaveStart && date <= leaveEnd;
-            });
-            
-            const shutdownsOnDate = workshopShutdowns.filter(shutdown => {
-              const shutdownStart = new Date(shutdown.startDate);
-              const shutdownEnd = new Date(shutdown.endDate);
-              return date >= shutdownStart && date <= shutdownEnd;
-            });
-            
-            // Check for bank holidays
-            const bankHolidays = getBankHolidays(date.getFullYear());
-            const bankHolidayOnDate = bankHolidays.find(holiday => {
-              return holiday.date.toDateString() === date.toDateString();
-            });
-            
-            const result = [...regularLeave];
-            
-            // Add workshop shutdowns
-            shutdownsOnDate.forEach(shutdown => {
-              result.push({
-                id: `shutdown-${shutdown.id}`,
-                type: 'Workshop Shutdown',
-                status: 'shutdown',
-                isShutdown: true,
-                name: shutdown.name
-              });
-            });
-            
-            // Add bank holiday if found
-            if (bankHolidayOnDate) {
-              result.push({
-                id: `bankholiday-${bankHolidayOnDate.name.replace(/\s+/g, '-')}`,
-                type: 'Bank Holiday',
-                status: 'bankholiday',
-                isBankHoliday: true,
-                name: bankHolidayOnDate.name
-              });
-            }
-            
-            return result;
-          };
-
-          const getStatusColor = (status) => {
-            switch(status) {
-              case 'approved': return 'bg-green-100 text-green-800';
-              case 'pending': return 'bg-yellow-100 text-yellow-800';
-              case 'shutdown': return 'bg-red-100 text-red-800';
-              case 'bankholiday': return 'bg-purple-100 text-purple-800';
-              default: return 'bg-gray-100 text-gray-800';
-            }
-          };
-
-          // Data operations
-          const syncData = async () => {
-            await dbApi.saveData('employees', employees);
-            await dbApi.saveData('leave_requests', leaveRequests);
-            await dbApi.saveWorkshopShutdowns(workshopShutdowns);
-            addNotification('Data synced successfully', 'success');
-          };
-
-          const saveQuickLeave = async () => {
-            const days = parseInt(quickLeaveForm.days) || 1;
-            const totalHours = days * 8;
-            const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
-            
-            if (!employee) {
-              addNotification('Please select a valid employee', 'error');
-              return;
-            }
-
-            const newLeaveRequest = {
-              id: Math.max(...leaveRequests.map(req => req.id), 0) + 1,
-              employeeId: parseInt(quickLeaveForm.employeeId),
-              startDate: new Date(selectedDate),
-              endDate: new Date(selectedDate),
-              type: quickLeaveForm.type,
-              status: 'approved',
-              hours: totalHours
-            };
-
-            if (days > 1) {
-              newLeaveRequest.endDate.setDate(newLeaveRequest.startDate.getDate() + days - 1);
-            }
-
-            setLeaveRequests(prev => [...prev, newLeaveRequest]);
-            
-            // Only update leave balance if it's not 'In Lieu' leave
-            if (quickLeaveForm.type !== 'In Lieu') {
-              setEmployees(prev => prev.map(emp => 
-                emp.id === parseInt(quickLeaveForm.employeeId) 
-                  ? { ...emp, usedLeave: emp.usedLeave + totalHours } 
-                  : emp
-              ));
-            }
-
-            await syncData();
-            setShowQuickLeaveModal(false);
-          };
-
-          const saveEmployee = async () => {
-            if (!employeeForm.name.trim() || !employeeForm.department.trim()) {
-              addNotification('Please fill in all required fields', 'error');
-              return;
-            }
-
-            const totalLeave = parseInt(employeeForm.totalLeave) || 0;
-            const usedLeave = parseInt(employeeForm.usedLeave) || 0;
-
-            if (editingEmployee) {
-              const updatedEmployee = {
-                ...editingEmployee,
-                name: employeeForm.name,
-                department: employeeForm.department,
-                totalLeave,
-                usedLeave,
-                color: employeeForm.color,
-                avatar: generateInitials(employeeForm.name)
-              };
-              setEmployees(prev => prev.map(emp => emp.id === editingEmployee.id ? updatedEmployee : emp));
-            } else {
-              const newEmployee = {
-                id: Math.max(...employees.map(emp => emp.id), 0) + 1,
-                name: employeeForm.name,
-                department: employeeForm.department,
-                totalLeave,
-                usedLeave,
-                avatar: generateInitials(employeeForm.name),
-                color: employeeForm.color
-              };
-              setEmployees(prev => [...prev, newEmployee]);
-            }
-            
-            await syncData();
-            setShowEmployeeModal(false);
-            setEditingEmployee(null);
-          };
-
-          const deleteEmployee = async (employeeId) => {
-            if (confirm('Are you sure you want to delete this employee?')) {
-              setEmployees(prev => prev.filter(emp => emp.id !== employeeId));
-              await syncData();
-            }
-          };
-
-          const saveWorkshopShutdown = async () => {
-            if (!shutdownForm.name.trim() || !shutdownForm.startDate || !shutdownForm.endDate) {
-              addNotification('Please fill in all required fields', 'error');
-              return;
-            }
-
-            const startDate = new Date(shutdownForm.startDate);
-            const endDate = new Date(shutdownForm.endDate);
-            
-            if (endDate < startDate) {
-              addNotification('End date must be after start date', 'error');
-              return;
-            }
-
-            const newShutdown = {
-              id: Math.max(...workshopShutdowns.map(s => s.id), 0) + 1,
-              name: shutdownForm.name,
-              startDate: startDate,
-              endDate: endDate,
-              description: shutdownForm.description
-            };
-
-            setWorkshopShutdowns(prev => [...prev, newShutdown]);
-            await syncData();
-            
-            setShutdownForm({ name: '', startDate: '', endDate: '', description: '' });
-            addNotification('Workshop shutdown added successfully', 'success');
-          };
-
-          const deleteWorkshopShutdown = async (shutdownId) => {
-            if (confirm('Are you sure you want to delete this workshop shutdown?')) {
-              setWorkshopShutdowns(prev => prev.filter(s => s.id !== shutdownId));
-              await syncData();
-              addNotification('Workshop shutdown deleted', 'success');
-            }
-          };
-
-          const openEmployeeModal = (employee = null) => {
-            if (employee) {
-              setEditingEmployee(employee);
-              setEmployeeForm({
-                name: employee.name,
-                department: employee.department,
-                totalLeave: employee.totalLeave.toString(),
-                usedLeave: employee.usedLeave.toString(),
-                color: employee.color
-              });
-            } else {
-              setEditingEmployee(null);
-              setEmployeeForm({
-                name: '', department: '', totalLeave: '160', usedLeave: '0',
-                color: colorOptions[employees.length % colorOptions.length]
-              });
-            }
-            setShowEmployeeModal(true);
-          };
-
-          // Load initial data
-          useEffect(() => {
-            const loadData = async () => {
-              const [employeesData, leaveRequestsData, shutdownsData] = await Promise.all([
-                dbApi.fetchEmployees(), 
-                dbApi.fetchLeaveRequests(),
-                dbApi.fetchWorkshopShutdowns()
-              ]);
-              setEmployees(employeesData);
-              setLeaveRequests(leaveRequestsData);
-              setWorkshopShutdowns(shutdownsData);
-              setIsLoading(false);
-              setTimeout(() => setShowConnectionIndicator(false), 3000);
-            };
-            loadData();
-          }, [dbApi]);
-
-          if (isLoading) {
-            return (
-              <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-4 text-gray-600">Loading...</p>
-                </div>
-              </div>
-            );
-          }
-
-          const days = getCalendarDays();
-
-          return (
-            <div className="min-h-screen bg-gray-50">
-              {/* Sidebar Overlay */}
-              <div className={`sidebar-overlay ${showSidebar ? 'show' : ''}`} onClick={() => setShowSidebar(false)} />
-              
-              {/* Sidebar */}
-              <div className={`sidebar ${showSidebar ? 'open' : ''}`}>
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-lg font-bold text-gray-900">Menu</h2>
-                    <button onClick={() => setShowSidebar(false)} className="p-1 hover:bg-gray-100 rounded">
-                      <Icon name="chevronLeft" className="h-5 w-5 text-gray-500" />
-                    </button>
-                  </div>
-                  
-                  <nav className="space-y-2">
-                    <button onClick={() => { setCurrentView('calendar'); setShowSidebar(false); }}
-                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
-                              currentView === 'calendar' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                            }`}>
-                      <Icon name="home" className="h-5 w-5" />
-                      <span>Calendar</span>
-                    </button>
-                    
-                    <button onClick={() => { setCurrentView('team'); setShowSidebar(false); }}
-                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
-                              currentView === 'team' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                            }`}>
-                      <Icon name="userGroup" className="h-5 w-5" />
-                      <span>Team Members</span>
-                    </button>
-                    
-                    <button onClick={() => { setCurrentView('settings'); setShowSidebar(false); }}
-                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
-                              currentView === 'settings' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                            }`}>
-                      <Icon name="settings" className="h-5 w-5" />
-                      <span>Settings</span>
-                    </button>
-                  </nav>
-                </div>
-              </div>
-
-              {/* Connection Status */}
-              <div className={`connection-indicator ${connectionStatus} ${!showConnectionIndicator ? 'hide' : ''}`}>
-                <Icon name={connectionStatus === 'connected' ? 'wifi' : 'wifiOff'} className="h-4 w-4" />
-                <span>{connectionStatus === 'connected' ? 'Connected' : 'Offline'}</span>
-              </div>
-
-              {/* Notifications */}
-              {notifications.map(notification => (
-                <div key={notification.id} className={`notification ${notification.type} ${notification.show ? 'show' : ''}`}>
-                  {notification.message}
-                </div>
-              ))}
-
-              {/* Header */}
-              <div className="bg-white shadow-sm border-b">
-                <div className="max-w-7xl mx-auto px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <button onClick={() => setShowSidebar(true)} className="p-2 hover:bg-gray-100 rounded-lg">
-                        <Icon name="menu" className="h-6 w-6 text-gray-600" />
-                      </button>
-                      <div className="flex items-center space-x-2">
-                        <Icon name="calendar" className="h-8 w-8 text-blue-600" />
-                        <h1 className="text-2xl font-bold text-gray-900">
-                          Atkin Guitars {currentView === 'team' ? 'Team Members' : currentView === 'settings' ? 'Settings' : 'Leave Calendar'}
-                        </h1>
-                      </div>
-                    </div>
-                    
-                    {currentView === 'calendar' && (
-                      <div className="flex bg-gray-100 rounded-lg p-1">
-                        {['week', 'month', 'year'].map(mode => (
-                          <button key={mode} onClick={() => setViewMode(mode)}
-                            className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${
-                              viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                            }`}>
-                            {mode}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Main Content - Calendar View */}
-              {currentView === 'calendar' && (
+{currentView === 'calendar' && (
                 <div className="max-w-7xl mx-auto px-6 py-8">
                   <div className="bg-white rounded-xl shadow-sm border">
                     <div className="flex items-center justify-between p-6 border-b">
@@ -805,22 +134,8 @@
                                              className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`}
                                              title={leave.type}>
                                           <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
-                                          <button onClick={() => {
-                                            if (confirm(`Cancel leave for ${employee?.name}?`)) {
-                                              setLeaveRequests(prev => prev.filter(req => req.id !== leave.id));
-                                              
-                                              // Only update leave balance if it's not 'In Lieu' leave
-                                              if (leave.type !== 'In Lieu') {
-                                                setEmployees(prev => prev.map(emp => 
-                                                  emp.id === leave.employeeId 
-                                                    ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
-                                                    : emp
-                                                ));
-                                              }
-                                              
-                                              syncData();
-                                            }
-                                          }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
+                                          <button onClick={() => cancelLeave(leave)} 
+                                                  className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
                                             <Icon name="x" className="h-2 w-2" />
                                           </button>
                                         </div>
@@ -838,7 +153,6 @@
                 </div>
               )}
 
-              {/* Settings View */}
               {currentView === 'settings' && (
                 <div className="max-w-4xl mx-auto px-6 py-8">
                   <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -848,7 +162,6 @@
                     </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* Add Workshop Shutdown Form */}
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                           <Icon name="factory" className="h-5 w-5 mr-2" />
@@ -893,7 +206,6 @@
                         </div>
                       </div>
                       
-                      {/* Existing Workshop Shutdowns */}
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">Existing Workshop Shutdowns</h3>
                         
@@ -930,7 +242,6 @@
                 </div>
               )}
 
-              {/* Team Members View */}
               {currentView === 'team' && (
                 <div className="max-w-4xl mx-auto px-6 py-8">
                   <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -1025,7 +336,6 @@
                 </div>
               )}
 
-              {/* Employee Modal */}
               {showEmployeeModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-xl p-6 w-full max-w-md">
@@ -1104,7 +414,6 @@
                 </div>
               )}
 
-              {/* Quick Leave Modal */}
               {showQuickLeaveModal && selectedDate && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-xl p-6 w-full max-w-md">
@@ -1173,4 +482,1017 @@
         ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
     </script>
 </body>
-</html>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atkin Guitars Leave Calendar</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .connection-indicator { 
+            position: fixed; top: 20px; right: 20px; z-index: 1000; padding: 8px 16px; 
+            border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 8px; 
+            transition: opacity 0.3s; 
+        }
+        .connection-indicator.hide { opacity: 0; transform: translateX(100%); }
+        .connected { background-color: #10B981; color: white; }
+        .disconnected { background-color: #EF4444; color: white; }
+        .sidebar { 
+            position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; 
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); 
+            transition: transform 0.3s; z-index: 1000; 
+        }
+        .sidebar.open { transform: translateX(0); }
+        .sidebar-overlay { 
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; 
+            opacity: 0; visibility: hidden; transition: all 0.3s; 
+        }
+        .sidebar-overlay.show { opacity: 1; visibility: visible; }
+        .notification { 
+            position: fixed; top: 80px; right: 20px; z-index: 1000; padding: 12px 16px; 
+            border-radius: 8px; color: white; transform: translateX(100%); transition: transform 0.3s; 
+        }
+        .notification.show { transform: translateX(0); }
+        .notification.success { background-color: #10B981; }
+        .notification.error { background-color: #EF4444; }
+        .firebase-setup { 
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-center; 
+            z-index: 2000; 
+        }
+        .firebase-setup-content {
+            background: white; padding: 2rem; border-radius: 12px; max-width: 500px; width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+        
+        // Firebase Configuration - REPLACE WITH YOUR CONFIG
+        const firebaseConfig = {
+            apiKey: "your-api-key-here",
+            authDomain: "your-project.firebaseapp.com",
+            projectId: "your-project-id",
+            storageBucket: "your-project.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "your-app-id"
+        };
+
+        // Initialize Firebase
+        let firebaseApp = null;
+        let db = null;
+        
+        try {
+            if (firebaseConfig.apiKey !== "your-api-key-here") {
+                firebaseApp = firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+            }
+        } catch (error) {
+            console.log('Firebase not configured yet:', error);
+        }
+        
+        // Icon component
+        const Icon = ({ name, className }) => {
+            const paths = {
+                calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+                menu: "M4 6h16M4 12h16M4 18h16",
+                users: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
+                userAdd: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
+                edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+                trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+                x: "M6 18L18 6M6 6l12 12",
+                wifi: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0",
+                wifiOff: "M18.364 5.636l-12.728 12.728m0 0L1.394 14.122m4.242 4.242a5.5 5.5 0 007.778 0m7.778-7.778a10.97 10.97 0 00-3.536-2.464m-6.242 6.242L7.758 8.879m0 0a10.97 10.97 0 00-3.536 2.464",
+                chevronLeft: "M15 19l-7-7 7-7",
+                userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
+                home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+                settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+                factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9",
+                cloud: "M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+            };
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
+                </svg>
+            );
+        };
+
+        // Firebase Database API
+        class FirebaseAPI {
+            constructor() {
+                this.db = db;
+                this.isConnected = !!db;
+                this.unsubscribers = [];
+            }
+
+            subscribeToEmployees(callback) {
+                if (!this.db) return;
+                
+                const unsubscribe = this.db.collection('employees').onSnapshot(
+                    (snapshot) => {
+                        const employees = [];
+                        snapshot.forEach((doc) => {
+                            employees.push({ id: doc.id, ...doc.data() });
+                        });
+                        callback(employees);
+                    },
+                    (error) => {
+                        console.error('Error listening to employees:', error);
+                        callback([]);
+                    }
+                );
+                
+                this.unsubscribers.push(unsubscribe);
+                return unsubscribe;
+            }
+
+            subscribeToLeaveRequests(callback) {
+                if (!this.db) return;
+                
+                const unsubscribe = this.db.collection('leaveRequests').onSnapshot(
+                    (snapshot) => {
+                        const requests = [];
+                        snapshot.forEach((doc) => {
+                            const data = doc.data();
+                            requests.push({
+                                id: doc.id,
+                                ...data,
+                                startDate: data.startDate?.toDate() || new Date(),
+                                endDate: data.endDate?.toDate() || new Date()
+                            });
+                        });
+                        callback(requests);
+                    },
+                    (error) => {
+                        console.error('Error listening to leave requests:', error);
+                        callback([]);
+                    }
+                );
+                
+                this.unsubscribers.push(unsubscribe);
+                return unsubscribe;
+            }
+
+            subscribeToWorkshopShutdowns(callback) {
+                if (!this.db) return;
+                
+                const unsubscribe = this.db.collection('workshopShutdowns').onSnapshot(
+                    (snapshot) => {
+                        const shutdowns = [];
+                        snapshot.forEach((doc) => {
+                            const data = doc.data();
+                            shutdowns.push({
+                                id: doc.id,
+                                ...data,
+                                startDate: data.startDate?.toDate() || new Date(),
+                                endDate: data.endDate?.toDate() || new Date()
+                            });
+                        });
+                        callback(shutdowns);
+                    },
+                    (error) => {
+                        console.error('Error listening to workshop shutdowns:', error);
+                        callback([]);
+                    }
+                );
+                
+                this.unsubscribers.push(unsubscribe);
+                return unsubscribe;
+            }
+
+            async saveEmployee(employee) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                
+                if (employee.id) {
+                    await this.db.collection('employees').doc(employee.id.toString()).set(employee);
+                } else {
+                    const docRef = await this.db.collection('employees').add(employee);
+                    return docRef.id;
+                }
+            }
+
+            async deleteEmployee(employeeId) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                await this.db.collection('employees').doc(employeeId.toString()).delete();
+            }
+
+            async saveLeaveRequest(request) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                
+                if (request.id) {
+                    await this.db.collection('leaveRequests').doc(request.id.toString()).set(request);
+                } else {
+                    const docRef = await this.db.collection('leaveRequests').add(request);
+                    return docRef.id;
+                }
+            }
+
+            async deleteLeaveRequest(requestId) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                await this.db.collection('leaveRequests').doc(requestId.toString()).delete();
+            }
+
+            async saveWorkshopShutdown(shutdown) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                
+                if (shutdown.id) {
+                    await this.db.collection('workshopShutdowns').doc(shutdown.id.toString()).set(shutdown);
+                } else {
+                    const docRef = await this.db.collection('workshopShutdowns').add(shutdown);
+                    return docRef.id;
+                }
+            }
+
+            async deleteWorkshopShutdown(shutdownId) {
+                if (!this.db) throw new Error('Firebase not initialized');
+                await this.db.collection('workshopShutdowns').doc(shutdownId.toString()).delete();
+            }
+
+            cleanup() {
+                this.unsubscribers.forEach(unsubscribe => unsubscribe());
+                this.unsubscribers = [];
+            }
+        }
+
+        // Firebase Setup Component
+        const FirebaseSetup = ({ onComplete }) => {
+            return (
+                <div className="firebase-setup">
+                    <div className="firebase-setup-content">
+                        <div className="text-center mb-6">
+                            <Icon name="cloud" className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+                            <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Firebase Sync</h2>
+                            <p className="text-gray-600">Get real-time syncing across all devices in 3 easy steps</p>
+                        </div>
+                        
+                        <div className="space-y-6">
+                            <div className="bg-blue-50 p-4 rounded-lg">
+                                <h3 className="font-semibold text-blue-900 mb-2">Step 1: Create Firebase Project</h3>
+                                <ol className="list-decimal list-inside text-sm text-blue-800 space-y-1">
+                                    <li>Go to <a href="https://console.firebase.google.com" target="_blank" className="underline">console.firebase.google.com</a></li>
+                                    <li>Click "Create a project" and name it "atkin-guitars"</li>
+                                    <li>Disable Google Analytics (not needed)</li>
+                                </ol>
+                            </div>
+                            
+                            <div className="bg-green-50 p-4 rounded-lg">
+                                <h3 className="font-semibold text-green-900 mb-2">Step 2: Setup Database</h3>
+                                <ol className="list-decimal list-inside text-sm text-green-800 space-y-1">
+                                    <li>Click "Firestore Database" → "Create database"</li>
+                                    <li>Choose "Start in test mode" → Next → Done</li>
+                                </ol>
+                            </div>
+                            
+                            <div className="bg-purple-50 p-4 rounded-lg">
+                                <h3 className="font-semibold text-purple-900 mb-2">Step 3: Get Config</h3>
+                                <ol className="list-decimal list-inside text-sm text-purple-800 space-y-1">
+                                    <li>Click Settings ⚙️ → "Project settings"</li>
+                                    <li>Scroll down → Click "Add app" → Web icon</li>
+                                    <li>Name: "Atkin Calendar" → Register app</li>
+                                    <li>Copy the firebaseConfig object and replace it in the HTML</li>
+                                </ol>
+                            </div>
+                            
+                            <div className="bg-yellow-50 p-4 rounded-lg">
+                                <p className="text-sm text-yellow-800">
+                                    <strong>Almost there!</strong> Replace the firebaseConfig in lines 54-60 of the HTML file with your config, 
+                                    then refresh the page. Your calendar will automatically sync across all devices!
+                                </p>
+                            </div>
+                            
+                            <div className="flex justify-center">
+                                <button 
+                                    onClick={onComplete}
+                                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                    I've Updated the Config - Let's Go!
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LeaveCalendar = () => {
+          const [currentDate, setCurrentDate] = useState(new Date());
+          const [viewMode, setViewMode] = useState('month');
+          const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
+          const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+          const [selectedDate, setSelectedDate] = useState(null);
+          const [editingEmployee, setEditingEmployee] = useState(null);
+          const [connectionStatus, setConnectionStatus] = useState('disconnected');
+          const [showConnectionIndicator, setShowConnectionIndicator] = useState(true);
+          const [notifications, setNotifications] = useState([]);
+          const [employees, setEmployees] = useState([]);
+          const [leaveRequests, setLeaveRequests] = useState([]);
+          const [isLoading, setIsLoading] = useState(true);
+          const [showSidebar, setShowSidebar] = useState(false);
+          const [currentView, setCurrentView] = useState('calendar');
+          const [firebaseApi] = useState(() => new FirebaseAPI());
+          const [showFirebaseSetup, setShowFirebaseSetup] = useState(false);
+
+          const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
+          const [shutdownForm, setShutdownForm] = useState({
+            name: '', startDate: '', endDate: '', description: ''
+          });
+
+          const [quickLeaveForm, setQuickLeaveForm] = useState({
+            employeeId: '1', days: 1, type: 'Annual Leave'
+          });
+          const [employeeForm, setEmployeeForm] = useState({
+            name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6'
+          });
+
+          const colorOptions = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+          const defaultEmployees = [
+            { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
+            { id: 2, name: 'Michael Chen', department: 'Design', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
+            { id: 3, name: 'Emma Davis', department: 'Sales', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
+          ];
+
+          const defaultLeaveRequests = [{
+            id: 1, employeeId: 1, startDate: new Date(2025, 7, 25), 
+            endDate: new Date(2025, 7, 29), type: 'Annual Leave', 
+            status: 'approved', hours: 40
+          }];
+
+          const getBankHolidays = (year) => {
+            const holidays = [];
+            holidays.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+            
+            const easter = getEasterDate(year);
+            const goodFriday = new Date(easter);
+            goodFriday.setDate(easter.getDate() - 2);
+            holidays.push({ name: "Good Friday", date: goodFriday });
+            
+            const easterMonday = new Date(easter);
+            easterMonday.setDate(easter.getDate() + 1);
+            holidays.push({ name: "Easter Monday", date: easterMonday });
+            
+            const mayBankHoliday = getFirstMondayOfMonth(year, 4);
+            holidays.push({ name: "Early May Bank Holiday", date: mayBankHoliday });
+            
+            const springBankHoliday = getLastMondayOfMonth(year, 4);
+            holidays.push({ name: "Spring Bank Holiday", date: springBankHoliday });
+            
+            const summerBankHoliday = getLastMondayOfMonth(year, 7);
+            holidays.push({ name: "Summer Bank Holiday", date: summerBankHoliday });
+            
+            holidays.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+            holidays.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+            
+            return holidays;
+          };
+
+          const getEasterDate = (year) => {
+            const a = year % 19;
+            const b = Math.floor(year / 100);
+            const c = year % 100;
+            const d = Math.floor(b / 4);
+            const e = b % 4;
+            const f = Math.floor((b + 8) / 25);
+            const g = Math.floor((b - f + 1) / 3);
+            const h = (19 * a + b - d - g + 15) % 30;
+            const i = Math.floor(c / 4);
+            const k = c % 4;
+            const l = (32 + 2 * e + 2 * i - h - k) % 7;
+            const m = Math.floor((a + 11 * h + 22 * l) / 451);
+            const n = Math.floor((h + l - 7 * m + 114) / 31);
+            const p = (h + l - 7 * m + 114) % 31;
+            return new Date(year, n - 1, p + 1);
+          };
+
+          const getFirstMondayOfMonth = (year, month) => {
+            const firstDay = new Date(year, month, 1);
+            const dayOfWeek = firstDay.getDay();
+            const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+            return new Date(year, month, 1 + daysUntilMonday);
+          };
+
+          const getLastMondayOfMonth = (year, month) => {
+            const lastDay = new Date(year, month + 1, 0);
+            const dayOfWeek = lastDay.getDay();
+            const daysToSubtract = dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            return new Date(year, month, lastDay.getDate() - daysToSubtract);
+          };
+
+          const addNotification = useCallback((message, type = 'info') => {
+            const id = Date.now();
+            setNotifications(prev => [...prev, { id, message, type, show: false }]);
+            setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show: true } : n)), 100);
+            setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
+          }, []);
+
+          const formatHours = (hours) => {
+            const days = Math.floor(hours / 8);
+            const remainingHours = hours % 8;
+            return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+          };
+
+          const generateInitials = (name) => name.split(' ').map(word => word[0]).join('').toUpperCase().substring(0, 2);
+
+          const getCalendarDays = () => {
+            if (viewMode === 'week') {
+              return getWeekDays();
+            } else if (viewMode === 'year') {
+              return getYearMonths();
+            } else {
+              return getMonthDays();
+            }
+          };
+
+          const getMonthDays = () => {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const startDate = new Date(firstDay);
+            startDate.setDate(startDate.getDate() - firstDay.getDay());
+            const days = [];
+            for (let i = 0; i < 42; i++) {
+              days.push(new Date(startDate));
+              startDate.setDate(startDate.getDate() + 1);
+            }
+            return days;
+          };
+
+          const getWeekDays = () => {
+            const startOfWeek = new Date(currentDate);
+            const day = startOfWeek.getDay();
+            startOfWeek.setDate(currentDate.getDate() - day);
+            const days = [];
+            for (let i = 0; i < 7; i++) {
+              const day = new Date(startOfWeek);
+              day.setDate(startOfWeek.getDate() + i);
+              days.push(day);
+            }
+            return days;
+          };
+
+          const getYearMonths = () => {
+            const year = currentDate.getFullYear();
+            const months = [];
+            for (let i = 0; i < 12; i++) {
+              months.push(new Date(year, i, 1));
+            }
+            return months;
+          };
+
+          const navigateCalendar = (direction) => {
+            setCurrentDate(prev => {
+              const newDate = new Date(prev);
+              if (viewMode === 'week') {
+                newDate.setDate(prev.getDate() + (direction * 7));
+              } else if (viewMode === 'year') {
+                newDate.setFullYear(prev.getFullYear() + direction);
+              } else {
+                newDate.setMonth(prev.getMonth() + direction);
+              }
+              return newDate;
+            });
+          };
+
+          const getViewTitle = () => {
+            if (viewMode === 'week') {
+              const startOfWeek = new Date(currentDate);
+              const day = startOfWeek.getDay();
+              startOfWeek.setDate(currentDate.getDate() - day);
+              const endOfWeek = new Date(startOfWeek);
+              endOfWeek.setDate(startOfWeek.getDate() + 6);
+              
+              if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
+                return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()}-${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
+              } else {
+                return `${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getDate()} - ${monthNames[endOfWeek.getMonth()]} ${endOfWeek.getDate()}, ${startOfWeek.getFullYear()}`;
+              }
+            } else if (viewMode === 'year') {
+              return currentDate.getFullYear().toString();
+            } else {
+              return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+            }
+          };
+
+          const getGridColumns = () => {
+            if (viewMode === 'week') return 'grid-cols-7';
+            if (viewMode === 'year') return 'grid-cols-4';
+            return 'grid-cols-7';
+          };
+
+          const getLeaveForDate = (date) => {
+            const regularLeave = leaveRequests.filter(leave => {
+              const leaveStart = new Date(leave.startDate);
+              const leaveEnd = new Date(leave.endDate);
+              return date >= leaveStart && date <= leaveEnd;
+            });
+            
+            const shutdownsOnDate = workshopShutdowns.filter(shutdown => {
+              const shutdownStart = new Date(shutdown.startDate);
+              const shutdownEnd = new Date(shutdown.endDate);
+              return date >= shutdownStart && date <= shutdownEnd;
+            });
+            
+            const bankHolidays = getBankHolidays(date.getFullYear());
+            const bankHolidayOnDate = bankHolidays.find(holiday => {
+              return holiday.date.toDateString() === date.toDateString();
+            });
+            
+            const result = [...regularLeave];
+            
+            shutdownsOnDate.forEach(shutdown => {
+              result.push({
+                id: `shutdown-${shutdown.id}`,
+                type: 'Workshop Shutdown',
+                status: 'shutdown',
+                isShutdown: true,
+                name: shutdown.name
+              });
+            });
+            
+            if (bankHolidayOnDate) {
+              result.push({
+                id: `bankholiday-${bankHolidayOnDate.name.replace(/\s+/g, '-')}`,
+                type: 'Bank Holiday',
+                status: 'bankholiday',
+                isBankHoliday: true,
+                name: bankHolidayOnDate.name
+              });
+            }
+            
+            return result;
+          };
+
+          const getStatusColor = (status) => {
+            switch(status) {
+              case 'approved': return 'bg-green-100 text-green-800';
+              case 'pending': return 'bg-yellow-100 text-yellow-800';
+              case 'shutdown': return 'bg-red-100 text-red-800';
+              case 'bankholiday': return 'bg-purple-100 text-purple-800';
+              default: return 'bg-gray-100 text-gray-800';
+            }
+          };
+
+          const saveToLocalStorage = (type, data) => {
+            try {
+              localStorage.setItem(`atkin_${type}`, JSON.stringify(data));
+            } catch (error) {
+              console.error('Error saving to localStorage:', error);
+            }
+          };
+
+          const saveQuickLeave = async () => {
+            try {
+              const days = parseInt(quickLeaveForm.days) || 1;
+              const totalHours = days * 8;
+              const employee = employees.find(emp => emp.id == quickLeaveForm.employeeId);
+              
+              if (!employee) {
+                addNotification('Please select a valid employee', 'error');
+                return;
+              }
+
+              const newLeaveRequest = {
+                employeeId: parseInt(quickLeaveForm.employeeId),
+                startDate: new Date(selectedDate),
+                endDate: new Date(selectedDate),
+                type: quickLeaveForm.type,
+                status: 'approved',
+                hours: totalHours
+              };
+
+              if (days > 1) {
+                newLeaveRequest.endDate.setDate(newLeaveRequest.startDate.getDate() + days - 1);
+              }
+
+              if (firebaseApi.isConnected) {
+                await firebaseApi.saveLeaveRequest(newLeaveRequest);
+                
+                if (quickLeaveForm.type !== 'In Lieu') {
+                  const updatedEmployee = {
+                    ...employee,
+                    usedLeave: employee.usedLeave + totalHours
+                  };
+                  await firebaseApi.saveEmployee(updatedEmployee);
+                }
+              } else {
+                const newId = Math.max(...leaveRequests.map(req => req.id || 0), 0) + 1;
+                newLeaveRequest.id = newId;
+                const updatedRequests = [...leaveRequests, newLeaveRequest];
+                setLeaveRequests(updatedRequests);
+                saveToLocalStorage('leave_requests', updatedRequests.map(req => ({
+                  ...req,
+                  startDate: req.startDate.toISOString(),
+                  endDate: req.endDate.toISOString()
+                })));
+                
+                if (quickLeaveForm.type !== 'In Lieu') {
+                  const updatedEmployees = employees.map(emp => 
+                    emp.id == quickLeaveForm.employeeId 
+                      ? { ...emp, usedLeave: emp.usedLeave + totalHours } 
+                      : emp
+                  );
+                  setEmployees(updatedEmployees);
+                  saveToLocalStorage('employees', updatedEmployees);
+                }
+              }
+
+              addNotification('Leave added successfully!', 'success');
+              setShowQuickLeaveModal(false);
+            } catch (error) {
+              console.error('Error saving leave:', error);
+              addNotification('Failed to save leave', 'error');
+            }
+          };
+
+          const saveEmployee = async () => {
+            try {
+              if (!employeeForm.name.trim() || !employeeForm.department.trim()) {
+                addNotification('Please fill in all required fields', 'error');
+                return;
+              }
+
+              const totalLeave = parseInt(employeeForm.totalLeave) || 0;
+              const usedLeave = parseInt(employeeForm.usedLeave) || 0;
+
+              const employeeData = {
+                name: employeeForm.name,
+                department: employeeForm.department,
+                totalLeave,
+                usedLeave,
+                color: employeeForm.color,
+                avatar: generateInitials(employeeForm.name)
+              };
+
+              if (editingEmployee) {
+                employeeData.id = editingEmployee.id;
+              }
+
+              if (firebaseApi.isConnected) {
+                await firebaseApi.saveEmployee(employeeData);
+              } else {
+                let updatedEmployees;
+                if (editingEmployee) {
+                  updatedEmployees = employees.map(emp => emp.id === editingEmployee.id ? employeeData : emp);
+                } else {
+                  const newId = Math.max(...employees.map(emp => emp.id || 0), 0) + 1;
+                  employeeData.id = newId;
+                  updatedEmployees = [...employees, employeeData];
+                }
+                setEmployees(updatedEmployees);
+                saveToLocalStorage('employees', updatedEmployees);
+              }
+              
+              addNotification(`Employee ${editingEmployee ? 'updated' : 'added'} successfully!`, 'success');
+              setShowEmployeeModal(false);
+              setEditingEmployee(null);
+            } catch (error) {
+              console.error('Error saving employee:', error);
+              addNotification('Failed to save employee', 'error');
+            }
+          };
+
+          const deleteEmployee = async (employeeId) => {
+            if (confirm('Are you sure you want to delete this employee?')) {
+              try {
+                if (firebaseApi.isConnected) {
+                  await firebaseApi.deleteEmployee(employeeId);
+                } else {
+                  const updatedEmployees = employees.filter(emp => emp.id !== employeeId);
+                  setEmployees(updatedEmployees);
+                  saveToLocalStorage('employees', updatedEmployees);
+                }
+                addNotification('Employee deleted successfully', 'success');
+              } catch (error) {
+                console.error('Error deleting employee:', error);
+                addNotification('Failed to delete employee', 'error');
+              }
+            }
+          };
+
+          const saveWorkshopShutdown = async () => {
+            try {
+              if (!shutdownForm.name.trim() || !shutdownForm.startDate || !shutdownForm.endDate) {
+                addNotification('Please fill in all required fields', 'error');
+                return;
+              }
+
+              const startDate = new Date(shutdownForm.startDate);
+              const endDate = new Date(shutdownForm.endDate);
+              
+              if (endDate < startDate) {
+                addNotification('End date must be after start date', 'error');
+                return;
+              }
+
+              const shutdownData = {
+                name: shutdownForm.name,
+                startDate: startDate,
+                endDate: endDate,
+                description: shutdownForm.description
+              };
+
+              if (firebaseApi.isConnected) {
+                await firebaseApi.saveWorkshopShutdown(shutdownData);
+              } else {
+                const newId = Math.max(...workshopShutdowns.map(s => s.id || 0), 0) + 1;
+                shutdownData.id = newId;
+                const updatedShutdowns = [...workshopShutdowns, shutdownData];
+                setWorkshopShutdowns(updatedShutdowns);
+                saveToLocalStorage('workshop_shutdowns', updatedShutdowns.map(s => ({
+                  ...s,
+                  startDate: s.startDate.toISOString(),
+                  endDate: s.endDate.toISOString()
+                })));
+              }
+              
+              setShutdownForm({ name: '', startDate: '', endDate: '', description: '' });
+              addNotification('Workshop shutdown added successfully', 'success');
+            } catch (error) {
+              console.error('Error saving workshop shutdown:', error);
+              addNotification('Failed to save workshop shutdown', 'error');
+            }
+          };
+
+          const deleteWorkshopShutdown = async (shutdownId) => {
+            if (confirm('Are you sure you want to delete this workshop shutdown?')) {
+              try {
+                if (firebaseApi.isConnected) {
+                  await firebaseApi.deleteWorkshopShutdown(shutdownId);
+                } else {
+                  const updatedShutdowns = workshopShutdowns.filter(s => s.id !== shutdownId);
+                  setWorkshopShutdowns(updatedShutdowns);
+                  saveToLocalStorage('workshop_shutdowns', updatedShutdowns.map(s => ({
+                    ...s,
+                    startDate: s.startDate.toISOString(),
+                    endDate: s.endDate.toISOString()
+                  })));
+                }
+                addNotification('Workshop shutdown deleted', 'success');
+              } catch (error) {
+                console.error('Error deleting workshop shutdown:', error);
+                addNotification('Failed to delete workshop shutdown', 'error');
+              }
+            }
+          };
+
+          const cancelLeave = async (leave) => {
+            const employee = employees.find(emp => emp.id === leave.employeeId);
+            if (confirm(`Cancel leave for ${employee?.name}?`)) {
+              try {
+                if (firebaseApi.isConnected) {
+                  await firebaseApi.deleteLeaveRequest(leave.id);
+                  
+                  if (leave.type !== 'In Lieu' && employee) {
+                    const updatedEmployee = {
+                      ...employee,
+                      usedLeave: employee.usedLeave - leave.hours
+                    };
+                    await firebaseApi.saveEmployee(updatedEmployee);
+                  }
+                } else {
+                  const updatedRequests = leaveRequests.filter(req => req.id !== leave.id);
+                  setLeaveRequests(updatedRequests);
+                  saveToLocalStorage('leave_requests', updatedRequests.map(req => ({
+                    ...req,
+                    startDate: req.startDate.toISOString(),
+                    endDate: req.endDate.toISOString()
+                  })));
+                  
+                  if (leave.type !== 'In Lieu' && employee) {
+                    const updatedEmployees = employees.map(emp => 
+                      emp.id === leave.employeeId 
+                        ? { ...emp, usedLeave: emp.usedLeave - leave.hours } 
+                        : emp
+                    );
+                    setEmployees(updatedEmployees);
+                    saveToLocalStorage('employees', updatedEmployees);
+                  }
+                }
+                
+                addNotification('Leave cancelled successfully', 'success');
+              } catch (error) {
+                console.error('Error cancelling leave:', error);
+                addNotification('Failed to cancel leave', 'error');
+              }
+            }
+          };
+
+          const openEmployeeModal = (employee = null) => {
+            if (employee) {
+              setEditingEmployee(employee);
+              setEmployeeForm({
+                name: employee.name,
+                department: employee.department,
+                totalLeave: employee.totalLeave.toString(),
+                usedLeave: employee.usedLeave.toString(),
+                color: employee.color
+              });
+            } else {
+              setEditingEmployee(null);
+              setEmployeeForm({
+                name: '', department: '', totalLeave: '160', usedLeave: '0',
+                color: colorOptions[employees.length % colorOptions.length]
+              });
+            }
+            setShowEmployeeModal(true);
+          };
+
+          useEffect(() => {
+            const initializeApp = async () => {
+              if (firebaseApi.isConnected) {
+                setConnectionStatus('connected');
+                
+                firebaseApi.subscribeToEmployees((employees) => {
+                  if (employees.length === 0) {
+                    defaultEmployees.forEach(emp => firebaseApi.saveEmployee(emp));
+                  } else {
+                    setEmployees(employees);
+                  }
+                });
+
+                firebaseApi.subscribeToLeaveRequests((requests) => {
+                  setLeaveRequests(requests);
+                });
+
+                firebaseApi.subscribeToWorkshopShutdowns((shutdowns) => {
+                  setWorkshopShutdowns(shutdowns);
+                });
+
+                addNotification('Connected to Firebase! Real-time sync enabled.', 'success');
+              } else {
+                if (firebaseConfig.apiKey === "your-api-key-here") {
+                  setShowFirebaseSetup(true);
+                }
+                
+                setConnectionStatus('disconnected');
+                
+                const storedEmployees = localStorage.getItem('atkin_employees');
+                const storedRequests = localStorage.getItem('atkin_leave_requests');
+                const storedShutdowns = localStorage.getItem('atkin_workshop_shutdowns');
+                
+                if (storedEmployees) {
+                  setEmployees(JSON.parse(storedEmployees));
+                } else {
+                  setEmployees(defaultEmployees);
+                  saveToLocalStorage('employees', defaultEmployees);
+                }
+                
+                if (storedRequests) {
+                  const requests = JSON.parse(storedRequests).map(req => ({
+                    ...req,
+                    startDate: new Date(req.startDate),
+                    endDate: new Date(req.endDate)
+                  }));
+                  setLeaveRequests(requests);
+                } else {
+                  setLeaveRequests(defaultLeaveRequests);
+                  saveToLocalStorage('leave_requests', defaultLeaveRequests.map(req => ({
+                    ...req,
+                    startDate: req.startDate.toISOString(),
+                    endDate: req.endDate.toISOString()
+                  })));
+                }
+                
+                if (storedShutdowns) {
+                  const shutdowns = JSON.parse(storedShutdowns).map(shutdown => ({
+                    ...shutdown,
+                    startDate: new Date(shutdown.startDate),
+                    endDate: new Date(shutdown.endDate)
+                  }));
+                  setWorkshopShutdowns(shutdowns);
+                } else {
+                  setWorkshopShutdowns([]);
+                }
+              }
+              
+              setIsLoading(false);
+              setTimeout(() => setShowConnectionIndicator(false), 3000);
+            };
+
+            initializeApp();
+
+            return () => {
+              firebaseApi.cleanup();
+            };
+          }, []);
+
+          if (isLoading) {
+            return (
+              <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">
+                    {firebaseApi.isConnected ? 'Connecting to Firebase...' : 'Loading calendar...'}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+
+          if (showFirebaseSetup) {
+            return <FirebaseSetup onComplete={() => setShowFirebaseSetup(false)} />;
+          }
+
+          const days = getCalendarDays();
+
+          return (
+            <div className="min-h-screen bg-gray-50">
+              <div className={`sidebar-overlay ${showSidebar ? 'show' : ''}`} onClick={() => setShowSidebar(false)} />
+              
+              <div className={`sidebar ${showSidebar ? 'open' : ''}`}>
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-lg font-bold text-gray-900">Menu</h2>
+                    <button onClick={() => setShowSidebar(false)} className="p-1 hover:bg-gray-100 rounded">
+                      <Icon name="chevronLeft" className="h-5 w-5 text-gray-500" />
+                    </button>
+                  </div>
+                  
+                  <nav className="space-y-2">
+                    <button onClick={() => { setCurrentView('calendar'); setShowSidebar(false); }}
+                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
+                              currentView === 'calendar' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                            }`}>
+                      <Icon name="home" className="h-5 w-5" />
+                      <span>Calendar</span>
+                    </button>
+                    
+                    <button onClick={() => { setCurrentView('team'); setShowSidebar(false); }}
+                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
+                              currentView === 'team' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                            }`}>
+                      <Icon name="userGroup" className="h-5 w-5" />
+                      <span>Team Members</span>
+                    </button>
+                    
+                    <button onClick={() => { setCurrentView('settings'); setShowSidebar(false); }}
+                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
+                              currentView === 'settings' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                            }`}>
+                      <Icon name="settings" className="h-5 w-5" />
+                      <span>Settings</span>
+                    </button>
+                  </nav>
+                </div>
+              </div>
+
+              <div className={`connection-indicator ${connectionStatus} ${!showConnectionIndicator ? 'hide' : ''}`}>
+                <Icon name={connectionStatus === 'connected' ? 'wifi' : 'wifiOff'} className="h-4 w-4" />
+                <span>{connectionStatus === 'connected' ? 'Firebase Connected' : 'Offline Mode'}</span>
+              </div>
+
+              {notifications.map(notification => (
+                <div key={notification.id} className={`notification ${notification.type} ${notification.show ? 'show' : ''}`}>
+                  {notification.message}
+                </div>
+              ))}
+
+              <div className="bg-white shadow-sm border-b">
+                <div className="max-w-7xl mx-auto px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <button onClick={() => setShowSidebar(true)} className="p-2 hover:bg-gray-100 rounded-lg">
+                        <Icon name="menu" className="h-6 w-6 text-gray-600" />
+                      </button>
+                      <div className="flex items-center space-x-2">
+                        <Icon name="calendar" className="h-8 w-8 text-blue-600" />
+                        <h1 className="text-2xl font-bold text-gray-900">
+                          Atkin Guitars {currentView === 'team' ? 'Team Members' : currentView === 'settings' ? 'Settings' : 'Leave Calendar'}
+                        </h1>
+                        {connectionStatus === 'connected' && (
+                          <div className="flex items-center text-sm text-green-600 ml-2">
+                            <Icon name="cloud" className="h-4 w-4 mr-1" />
+                            <span>Synced</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {currentView === 'calendar' && (
+                      <div className="flex bg-gray-100 rounded-lg p-1">
+                        {['week', 'month', 'year'].map(mode => (
+                          <button key={mode} onClick={() => setViewMode(mode)}
+                            className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${
+                              viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            }`}>
+                            {mode}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>

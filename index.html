@@ -53,10 +53,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Offline-first cache
     enableIndexedDbPersistence(db).catch(() => {});
 
-    // Wait for anonymous auth so rules pass
     const ready = new Promise((resolve) => {
       let resolved = false;
       onAuthStateChanged(auth, (user) => {
@@ -64,11 +62,10 @@
       });
       signInAnonymously(auth).catch((err) => {
         console.error("Anon sign-in failed:", err);
-        if (!resolved) resolve(null); // allow local fallback
+        if (!resolved) resolve(null);
       });
     });
 
-    // Expose to the Babel script
     window.__fb = {
       app, auth, db, ready,
       api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
@@ -104,7 +101,7 @@
       );
     };
 
-    // ---------- Firestore-backed Database API (realtime + per-doc CRUD) ----------
+    // ---------- Firestore-backed Database API ----------
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
@@ -120,7 +117,6 @@
         if (typeof v === "string") return new Date(v);
         return v instanceof Date ? v : null;
       }
-      _date(v){ return v instanceof Date ? v : new Date(v); }
 
       // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
@@ -270,19 +266,18 @@
         await setDoc(ref, { ...s, id: ref.id });
       }
 
-      async updateWorkshopShutdown(id, updates) {
+      async updateShutdown(id, partial) {
         if (!this.db) {
           const arr = await this.fetchWorkshopShutdowns();
-          const newArr = arr.map(x => x.id === id ? { ...x, ...updates } : x);
-          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(newArr.map(x => ({
-            ...x,
-            startDate: new Date(x.startDate).toISOString(),
-            endDate: new Date(x.endDate).toISOString(),
-          }))));
+          const i = arr.findIndex(x => x.id === id);
+          if (i >= 0) {
+            arr[i] = { ...arr[i], ...partial };
+            localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+          }
           return;
         }
         const { doc, setDoc } = this.api;
-        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), updates, { merge: true });
+        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), partial, { merge: true });
       }
 
       async deleteWorkshopShutdown(id) {
@@ -295,6 +290,58 @@
         await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
       }
     }
+
+    // ---------- Utils ----------
+    const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+    const isWeekendDate = (d) => { const day = new Date(d).getDay(); return day === 0 || day === 6; };
+    const addDays = (d, n) => new Date(atMidnight(d).getTime() + n*86400000);
+    const toInputDate = (d) => { if (!d) return ''; const z = new Date(d); if (isNaN(z)) return ''; return z.toISOString().slice(0,10); };
+
+    // Portion of a leave (in hours) that applies to a given year, excluding weekends
+    const hoursPortionInYear = (leave, year) => {
+      const s = new Date(leave.startDate);
+      const e = new Date(leave.endDate);
+      const sameDay = atMidnight(s).getTime() === atMidnight(e).getTime();
+
+      if (sameDay && leave.hours < 8) {
+        return (s.getFullYear() === year && !isWeekendDate(s)) ? leave.hours : 0;
+      }
+      let sum = 0;
+      for (let d = atMidnight(s); d <= atMidnight(e); d = addDays(d, 1)) {
+        if (d.getFullYear() === year && !isWeekendDate(d)) sum += 8;
+      }
+      return sum;
+    };
+
+    const weekdayCountInclusive = (s, e) => {
+      let c = 0;
+      for (let d = atMidnight(s); d <= atMidnight(e); d = addDays(d, 1)) {
+        if (!isWeekendDate(d)) c++;
+      }
+      return c;
+    };
+
+    const workingHoursForLeave = (leave) => {
+      const s = new Date(leave.startDate);
+      const e = new Date(leave.endDate);
+      const same = atMidnight(s).getTime() === atMidnight(e).getTime();
+      if (same && leave.hours < 8) return isWeekendDate(s) ? 0 : leave.hours;
+      return weekdayCountInclusive(s, e) * 8;
+    };
+
+    const formatHoursLong = (h) => {
+      if (h <= 0) return "0h";
+      if (h < 8) return `${h}h`;
+      const d = Math.floor(h / 8), r = h % 8;
+      return r ? `${d}d ${r}h` : `${d}d`;
+    };
+
+    const formatHours = (h) => {
+      const d = Math.floor(h/8), r=h%8;
+      return r>0?`${d}d ${r}h`:`${d}d`;
+    };
+
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
     const LeaveCalendar = () => {
       // State management
@@ -317,10 +364,10 @@
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
 
-      // Edit modal state for shutdowns
-      const [showShutdownEditModal, setShowShutdownEditModal] = useState(false);
+      // Edit shutdown modal
+      const [showEditShutdownModal, setShowEditShutdownModal] = useState(false);
       const [editingShutdown, setEditingShutdown] = useState(null);
-      const [shutdownEditForm, setShutdownEditForm] = useState({ name:'', startDate:'', endDate:'', description:'' });
+      const [editShutdownForm, setEditShutdownForm] = useState({ name:'', startDate:'', endDate:'', description:'' });
 
       const addNotification = useCallback((message, type='info') => {
         const id = Date.now();
@@ -344,7 +391,6 @@
       }, []);
 
       // Bank holidays helpers
-      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const getEasterDate = (year) => {
         const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
         return new Date(year,n-1,p+1);
@@ -368,53 +414,15 @@
         return hs;
       };
 
-      // Duration model "D:n" or "H:n"
+      // Quick add form (start empty for placeholders)
       const [quickLeaveForm, setQuickLeaveForm] = useState({
-        employeeId: '1',
-        duration: 'D:1', // default 1 day
-        type: 'Annual Leave'
+        employeeId: '',
+        duration: '',  // "D:n" or "H:n"
+        type: ''
       });
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
-
-      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return d>0 && r>0 ? `${d}d ${r}h` : (d>0 ? `${d}d` : `${r}h`); };
-      const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
-
-      const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
-      const formatDateRange = (start, end) => {
-        const s = new Date(start), e = new Date(end);
-        const same = s.toDateString() === e.toDateString();
-        const opts = { day: '2-digit', month: '2-digit', year: 'numeric' };
-        return same ? s.toLocaleDateString(undefined, opts)
-                    : `${s.toLocaleDateString(undefined, opts)} - ${e.toLocaleDateString(undefined, opts)}`;
-      };
-      const toInputDate = (d) => {
-        const dt = new Date(d);
-        const yyyy = dt.getFullYear();
-        const mm = String(dt.getMonth()+1).padStart(2,'0');
-        const dd = String(dt.getDate()).padStart(2,'0');
-        return `${yyyy}-${mm}-${dd}`;
-      };
-
-      // ---- YEAR-AWARE LEAVE PORTIONING ----
-      const hoursPortionInYear = (leave, year) => {
-        const s = new Date(leave.startDate);
-        const e = new Date(leave.endDate);
-        const sameDay = atMidnight(s).getTime() === atMidnight(e).getTime();
-
-        // If it's a same-day partial (hours < 8), it's all on that single day
-        if (sameDay && leave.hours < 8) {
-          return s.getFullYear() === year ? leave.hours : 0;
-        }
-
-        // Otherwise count 8h per day across the inclusive range, per year
-        let sum = 0;
-        for (let d = atMidnight(s); d <= atMidnight(e); d = new Date(d.getTime() + 86400000)) {
-          if (d.getFullYear() === year) sum += 8;
-        }
-        return sum;
-      };
 
       const getMonthDays = () => {
         const y=currentDate.getFullYear(), m=currentDate.getMonth();
@@ -492,41 +500,22 @@
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
-      // ---------- YEARLY RECONCILIATION (auto-correct balances on load/changes) ----------
-      useEffect(() => {
-        if (!employees.length) return;
-        const year = new Date().getFullYear();
-
-        // Sum current-year leave (exclude In Lieu) per employee
-        const totals = new Map();
-        for (const l of leaveRequests) {
-          if (l.type === 'In Lieu') continue;
-          const portion = hoursPortionInYear(l, year);
-          if (!totals.has(l.employeeId)) totals.set(l.employeeId, 0);
-          totals.set(l.employeeId, totals.get(l.employeeId) + portion);
-        }
-
-        // Apply if mismatched
-        const updates = [];
-        employees.forEach(emp => {
-          const target = totals.get(emp.id) || 0;
-          if ((emp.usedLeave || 0) !== target) {
-            updates.push({ ...emp, usedLeave: target });
-          }
-        });
-
-        if (updates.length) {
-          updates.forEach(u => dbApi.upsertEmployee(u));
-          setEmployees(prev => prev.map(e => {
-            const match = updates.find(u => u.id === e.id);
-            return match ? { ...e, usedLeave: match.usedLeave } : e;
-          }));
-        }
-      }, [leaveRequests, employees]);
+      // ---------- Team helpers ----------
+      const getNextLeaveForEmployee = (empId) => {
+        const today = atMidnight(new Date());
+        const upcoming = leaveRequests
+          .filter(l => l.employeeId === empId && atMidnight(new Date(l.endDate)) >= today)
+          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        return upcoming[0] || null;
+      };
 
       // ---------- ACTIONS ----------
-      // Save Quick Leave (duration "D:n" or "H:n")
       const saveQuickLeave = async () => {
+        // Validate selections
+        if (!quickLeaveForm.employeeId) { addNotification('Please select an employee', 'error'); return; }
+        if (!quickLeaveForm.duration)   { addNotification('Please select a duration', 'error'); return; }
+        if (!quickLeaveForm.type)       { addNotification('Please select a leave type', 'error'); return; }
+
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
@@ -546,16 +535,17 @@
           type: quickLeaveForm.type, status: 'approved', hours: totalHours
         };
 
-        // Optimistic UI for the leave list
+        // Optimistic UI: add event
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
-        // Update usedLeave only for the portion in the CURRENT year
-        if (quickLeaveForm.type !== 'In Lieu') {
+        // Year-aware, weekday-only deduction
+        const currentYear = new Date().getFullYear();
+        const portion = hoursPortionInYear(newLeave, currentYear);
+
+        if (quickLeaveForm.type !== 'In Lieu' && portion > 0) {
           const changed = employees.find(e => e.id === newLeave.employeeId);
-          const currentYear = new Date().getFullYear();
-          const portion = hoursPortionInYear(newLeave, currentYear);
-          if (changed && portion > 0) {
-            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + portion };
+          if (changed) {
+            const updated = { ...changed, usedLeave: changed.usedLeave + portion };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -572,14 +562,14 @@
         const usedLeave = parseInt(employeeForm.usedLeave) || 0;
 
         if (editingEmployee) {
-          const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
+          const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: employeeForm.name ? employeeForm.name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2) : editingEmployee.avatar };
           await dbApi.upsertEmployee(updated);
           setShowEmployeeModal(false);
           setEditingEmployee(null);
           addNotification('Employee updated', 'success');
         } else {
           const nextId = Math.max(0, ...employees.map(e => e.id||0)) + 1;
-          const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color };
+          const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: employeeForm.name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2), color: employeeForm.color };
           await dbApi.upsertEmployee(newEmp);
           setShowEmployeeModal(false);
           addNotification('Employee added', 'success');
@@ -604,44 +594,37 @@
         addNotification('Workshop shutdown added', 'success');
       };
 
+      const openEditShutdown = (s) => {
+        setEditingShutdown(s);
+        setEditShutdownForm({
+          name: s.name || '',
+          startDate: toInputDate(s.startDate),
+          endDate: toInputDate(s.endDate),
+          description: s.description || ''
+        });
+        setShowEditShutdownModal(true);
+      };
+
+      const updateWorkshopShutdown = async () => {
+        if (!editShutdownForm.name.trim() || !editShutdownForm.startDate || !editShutdownForm.endDate) { addNotification('Please fill in all required fields', 'error'); return; }
+        const startDate = new Date(editShutdownForm.startDate);
+        const endDate = new Date(editShutdownForm.endDate);
+        if (endDate < startDate) { addNotification('End date must be after start date', 'error'); return; }
+
+        await dbApi.updateShutdown(editingShutdown.id, {
+          name: editShutdownForm.name,
+          startDate, endDate,
+          description: editShutdownForm.description
+        });
+        setShowEditShutdownModal(false);
+        setEditingShutdown(null);
+        addNotification('Workshop shutdown updated', 'success');
+      };
+
       const deleteWorkshopShutdown = async (shutdownId) => {
         if (!confirm('Are you sure you want to delete this workshop shutdown?')) return;
         await dbApi.deleteWorkshopShutdown(shutdownId);
         addNotification('Workshop shutdown deleted', 'success');
-      };
-
-      // Edit shutdown
-      const openShutdownEditModal = (shutdown) => {
-        setEditingShutdown(shutdown);
-        setShutdownEditForm({
-          name: shutdown.name || '',
-          startDate: toInputDate(shutdown.startDate),
-          endDate: toInputDate(shutdown.endDate),
-          description: shutdown.description || ''
-        });
-        setShowShutdownEditModal(true);
-      };
-
-      const saveShutdownEdit = async () => {
-        if (!shutdownEditForm.name.trim() || !shutdownEditForm.startDate || !shutdownEditForm.endDate) {
-          addNotification('Please fill in all required fields', 'error');
-          return;
-        }
-        const startDate = new Date(shutdownEditForm.startDate);
-        const endDate = new Date(shutdownEditForm.endDate);
-        if (endDate < startDate) {
-          addNotification('End date must be after start date', 'error');
-          return;
-        }
-        await dbApi.updateWorkshopShutdown(editingShutdown.id, {
-          name: shutdownEditForm.name.trim(),
-          startDate,
-          endDate,
-          description: shutdownEditForm.description || ''
-        });
-        setShowShutdownEditModal(false);
-        setEditingShutdown(null);
-        addNotification('Workshop shutdown updated', 'success');
       };
 
       const openEmployeeModal = (employee=null) => {
@@ -667,6 +650,8 @@
       }
 
       const days = getCalendarDays();
+      const currentYear = new Date().getFullYear();
+      const isQuickFormValid = quickLeaveForm.employeeId && quickLeaveForm.duration && quickLeaveForm.type;
 
       return (
         <div className="min-h-screen bg-gray-50">
@@ -765,8 +750,11 @@
                         const map = new Map();
                         monthLeaves.forEach(leave => {
                           const id = leave.employeeId;
-                          if (map.has(id)) map.get(id).totalDays += (leave.hours/8);
-                          else map.set(id, { employeeId:id, status: leave.status, totalDays:(leave.hours/8) });
+                          // Sum weekday-only days
+                          const hrs = workingHoursForLeave(leave);
+                          const days = Math.round(hrs/8);
+                          if (map.has(id)) map.get(id).totalDays += days;
+                          else map.set(id, { employeeId:id, status: leave.status, totalDays:days });
                         });
                         const unique = Array.from(map.values());
                         return (
@@ -815,7 +803,7 @@
                                 {isCurrentMonth && !isWeekend && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
-                                    setQuickLeaveForm({ employeeId: employees.length>0 ? String(employees[0].id) : '1', duration: 'D:1', type: 'Annual Leave' });
+                                    setQuickLeaveForm({ employeeId:'', duration:'', type:'' }); // placeholders
                                     setShowQuickLeaveModal(true);
                                   }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
                                 )}
@@ -828,8 +816,11 @@
                                   if (leave.isBankHoliday) {
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
                                   }
+                                  // Do NOT render employee leaves on weekends
+                                  if (isWeekend) return null;
+
                                   const employee = employees.find(e => e.id === leave.employeeId);
-                                  if (!employee || isWeekend) return null; // hide employee leaves on weekends
+                                  if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
                                       <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
@@ -837,15 +828,10 @@
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
                                           if (leave.type !== 'In Lieu') {
-                                            const currentYear = new Date().getFullYear();
-                                            const portion = hoursPortionInYear(leave, currentYear);
-                                            if (portion > 0) {
-                                              const changed = employees.find(e => e.id === leave.employeeId);
-                                              if (changed) {
-                                                const updated = { ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - portion) };
-                                                await dbApi.upsertEmployee(updated);
-                                                setEmployees(prev => prev.map(emp => emp.id === updated.id ? updated : emp));
-                                              }
+                                            const changed = employees.find(e => e.id === leave.employeeId);
+                                            if (changed) {
+                                              const portion = hoursPortionInYear(leave, currentYear);
+                                              await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - portion) });
                                             }
                                           }
                                           addNotification('Leave removed', 'success');
@@ -926,8 +912,8 @@
                         workshopShutdowns.map(shutdown => (
                           <div key={shutdown.id}
                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                            <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => openShutdownEditModal(shutdown)}
+                            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                              <button onClick={() => openEditShutdown(shutdown)}
                                       className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
                                 <Icon name="edit" className="h-4 w-4" />
                               </button>
@@ -968,14 +954,11 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - (employee.usedLeave || 0);
+                    const remainingHours = employee.totalLeave - employee.usedLeave;
                     const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-                    // Next upcoming leave (start date today or later)
-                    const today = atMidnight(new Date());
-                    const upcomingLeave = leaveRequests
-                      .filter(l => l.employeeId === employee.id)
-                      .filter(l => atMidnight(l.startDate) >= today)
-                      .sort((a, b) => atMidnight(a.startDate) - atMidnight(b.startDate))[0];
+
+                    const nextLeave = getNextLeaveForEmployee(employee.id);
+                    const nextLeaveHours = nextLeave ? workingHoursForLeave(nextLeave) : 0;
 
                     return (
                       <div key={employee.id}
@@ -1005,34 +988,28 @@
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave || 0)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(Math.max(0, remainingHours))}</p></div>
+                            <div><span className="text-gray-600">Used ({currentYear}):</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
                           </div>
 
-                          {/* Next Leave block */}
                           <div className="mt-4">
                             <h4 className="text-sm font-medium text-gray-700 mb-2">Next Leave</h4>
-                            {upcomingLeave ? (
-                              <>
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className={`px-2 py-1 rounded ${getStatusColor(upcomingLeave.status)}`}>
-                                    {upcomingLeave.type}
-                                  </span>
-                                  <span className="text-gray-500">
-                                    {formatDateRange(upcomingLeave.startDate, upcomingLeave.endDate)}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-gray-600 mt-1">
-                                  Duration: {formatHours(upcomingLeave.hours)}
-                                </div>
-                              </>
+                            {nextLeave ? (
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="px-2 py-1 rounded bg-green-100 text-green-800">{nextLeave.type}</span>
+                                <span className="text-gray-600">
+                                  {new Date(nextLeave.startDate).toLocaleDateString()} – {new Date(nextLeave.endDate).toLocaleDateString()}
+                                  {" · "}
+                                  {formatHoursLong(nextLeaveHours)}
+                                </span>
+                              </div>
                             ) : (
-                              <p className="text-xs text-gray-400 italic">No upcoming leave</p>
+                              <div className="text-xs text-gray-500 italic">No upcoming leave</div>
                             )}
                           </div>
                         </div>
@@ -1171,7 +1148,11 @@
 
                   <div className="flex justify-end space-x-3 pt-4">
                     <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
-                    <button onClick={saveQuickLeave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Leave</button>
+                    <button onClick={saveQuickLeave}
+                            disabled={!isQuickFormValid}
+                            className={`px-4 py-2 rounded-lg text-white ${isQuickFormValid ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-300 cursor-not-allowed'}`}>
+                      Add Leave
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1179,61 +1160,42 @@
           )}
 
           {/* Edit Shutdown Modal */}
-          {showShutdownEditModal && editingShutdown && (
+          {showEditShutdownModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Edit Workshop Shutdown</h3>
-                  <button onClick={() => { setShowShutdownEditModal(false); setEditingShutdown(null); }}
-                          className="text-gray-400 hover:text-gray-600">✕</button>
+                  <button onClick={() => setShowEditShutdownModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                 </div>
-
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Shutdown Name *</label>
-                    <input type="text"
-                           value={shutdownEditForm.name}
-                           onChange={(e) => setShutdownEditForm(prev => ({...prev, name: e.target.value}))}
-                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                           placeholder="e.g., Christmas Break, Annual Maintenance" />
+                    <input type="text" value={editShutdownForm.name}
+                           onChange={(e) => setEditShutdownForm(prev => ({...prev, name: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
-                    <input type="date"
-                           value={shutdownEditForm.startDate}
-                           onChange={(e) => setShutdownEditForm(prev => ({...prev, startDate: e.target.value}))}
+                    <input type="date" value={editShutdownForm.startDate}
+                           onChange={(e) => setEditShutdownForm(prev => ({...prev, startDate: e.target.value}))}
                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
-                    <input type="date"
-                           value={shutdownEditForm.endDate}
-                           onChange={(e) => setShutdownEditForm(prev => ({...prev, endDate: e.target.value}))}
+                    <input type="date" value={editShutdownForm.endDate}
+                           onChange={(e) => setEditShutdownForm(prev => ({...prev, endDate: e.target.value}))}
                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                    <textarea
-                      value={shutdownEditForm.description}
-                      onChange={(e) => setShutdownEditForm(prev => ({...prev, description: e.target.value}))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                      placeholder="Optional description..."
-                    />
+                    <textarea value={editShutdownForm.description}
+                              onChange={(e) => setEditShutdownForm(prev => ({...prev, description: e.target.value}))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              rows="3"></textarea>
                   </div>
-
-                  <div className="flex justify-end space-x-3 pt-4">
-                    <button onClick={() => { setShowShutdownEditModal(false); setEditingShutdown(null); }}
-                            className="px-4 py-2 text-gray-600 hover:text-gray-800">
-                      Cancel
-                    </button>
-                    <button onClick={saveShutdownEdit}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      Save Changes
-                    </button>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button onClick={() => setShowEditShutdownModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button onClick={updateWorkshopShutdown} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
                   </div>
                 </div>
               </div>

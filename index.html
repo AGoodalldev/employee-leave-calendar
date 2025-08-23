@@ -94,7 +94,7 @@
         chevronLeft: "M15 19l-7-7 7-7",
         userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
         home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 00-1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
         factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
       };
       return (
@@ -120,7 +120,6 @@
         if (typeof v === "string") return new Date(v);
         return v instanceof Date ? v : null;
       }
-      _date(v){ return v instanceof Date ? v : new Date(v); }
 
       // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
@@ -348,11 +347,11 @@
         return hs;
       };
 
-      // ✅ UPDATED: quickLeaveForm now uses duration "D:n" or "H:n"
+      // Quick Leave form — start BLANK (placeholders show)
       const [quickLeaveForm, setQuickLeaveForm] = useState({
-        employeeId: '1',
-        duration: 'D:1', // D:n = days, H:n = hours
-        type: 'Annual Leave'
+        employeeId: '',
+        duration: '', // D:n = days, H:n = hours
+        type: ''
       });
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
@@ -412,6 +411,32 @@
         }
       };
 
+      // ------ Helpers for business-day logic and duration parsing ------
+      const isWeekendDate = (d) => {
+        const dow = d.getDay();
+        return dow === 0 || dow === 6; // Sun=0, Sat=6
+      };
+
+      const addBusinessDays = (start, days) => {
+        const d = new Date(start);
+        let added = 0;
+        while (added < days) {
+          d.setDate(d.getDate() + 1);
+          if (!isWeekendDate(d)) added += 1;
+        }
+        return d;
+      };
+
+      const parseDuration = (code) => {
+        if (!code) return null;
+        const [unit, valueStr] = code.split(':');
+        const n = parseInt(valueStr, 10);
+        if (!['H','D'].includes(unit) || isNaN(n) || n < 1) return null;
+        const hours = unit === 'H' ? n : n * 8;
+        const days = unit === 'D' ? n : 0;
+        return { unit, n, hours, days };
+      };
+
       // ---------- INITIALISE (wait for auth, then realtime listeners or local fallback) ----------
       useEffect(() => {
         let unsubEmp = null, unsubLeave = null, unsubShut = null;
@@ -438,25 +463,36 @@
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
-      // ✅ UPDATED: parse duration "D:n" or "H:n"
       const saveQuickLeave = async () => {
+        // Required selections
+        if (!quickLeaveForm.employeeId) { addNotification('Please select an employee', 'error'); return; }
+        if (!quickLeaveForm.duration)   { addNotification('Please select a duration', 'error'); return; }
+        if (!quickLeaveForm.type)       { addNotification('Please select a leave type', 'error'); return; }
+
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
-        const n = Math.max(1, parseInt(valueStr || '1'));
-        const isHours = unit === 'H';
+        const dur = parseDuration(quickLeaveForm.duration);
+        if (!dur) { addNotification('Invalid duration', 'error'); return; }
 
         const start = new Date(selectedDate);
-        const end = new Date(selectedDate);
-        if (!isHours && n > 1) end.setDate(start.getDate() + n - 1);
 
-        const totalHours = isHours ? n : n * 8;
+        // Block day-based leave starting on weekends
+        if (dur.unit === 'D' && isWeekendDate(start)) {
+          addNotification('Day-based leave must start on a weekday', 'error');
+          return;
+        }
+
+        // Compute end date (skip weekends for day-based)
+        let end = new Date(selectedDate);
+        if (dur.unit === 'D') {
+          end = dur.n > 1 ? addBusinessDays(start, dur.n - 1) : new Date(start);
+        }
 
         const newLeave = {
           employeeId: parseInt(quickLeaveForm.employeeId),
           startDate: start, endDate: end,
-          type: quickLeaveForm.type, status: 'approved', hours: totalHours
+          type: quickLeaveForm.type, status: 'approved', hours: dur.hours
         };
 
         // Optimistic UI
@@ -464,7 +500,7 @@
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+            const updated = { ...changed, usedLeave: changed.usedLeave + dur.hours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -677,12 +713,12 @@
                         {days.map((date, idx) => {
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
-                          const isWeekend = date.getDay()===0 || date.getDay()===6;
+                          const isWeekendCell = date.getDay()===0 || date.getDay()===6;
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekend ? 'bg-gray-100' : ''}`}>
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${isWeekendCell ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
@@ -690,8 +726,8 @@
                                 {isCurrentMonth && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
-                                    // default to 1 day leave
-                                    setQuickLeaveForm({ employeeId: employees.length>0 ? String(employees[0].id) : '1', duration: 'D:1', type: 'Annual Leave' });
+                                    // keep blanks so user must choose
+                                    setQuickLeaveForm({ employeeId: '', duration: '', type: '' });
                                     setShowQuickLeaveModal(true);
                                   }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
                                 )}
@@ -964,112 +1000,127 @@
           )}
 
           {/* Quick Leave Modal */}
-{showQuickLeaveModal && selectedDate && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className="bg-white rounded-xl p-6 w-full max-w-md">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">
-          Quick Add Leave - {selectedDate.toLocaleDateString()}
-        </h3>
-        <button
-          onClick={() => setShowQuickLeaveModal(false)}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          ✕
-        </button>
-      </div>
+          {showQuickLeaveModal && selectedDate && (() => {
+            const dur = parseDuration(quickLeaveForm.duration);
+            const start = new Date(selectedDate);
+            const startIsWeekend = isWeekendDate(start);
 
-      <div className="space-y-4">
-        {/* Employee */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Employee
-          </label>
-          <select
-            value={quickLeaveForm.employeeId}
-            onChange={(e) =>
-              setQuickLeaveForm((prev) => ({ ...prev, employeeId: e.target.value }))
+            // Preview text & computed end date (business days for D:n)
+            let end = new Date(start);
+            let previewText = '';
+            if (dur) {
+              if (dur.unit === 'D') {
+                end = dur.n > 1 ? addBusinessDays(start, dur.n - 1) : new Date(start);
+                previewText = `${dur.n} day${dur.n === 1 ? '' : 's'} (${dur.hours}h)`;
+              } else {
+                previewText = `${dur.hours} hour${dur.hours === 1 ? '' : 's'}`;
+              }
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select Employee</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name}
-              </option>
-            ))}
-          </select>
-        </div>
 
-        {/* Number of Days/Hours */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Number of Days/Hours
-          </label>
-          <select
-            value={quickLeaveForm.duration}
-            onChange={(e) =>
-              setQuickLeaveForm((prev) => ({ ...prev, duration: e.target.value }))
-            }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select Duration</option>
-            <optgroup label="Hours">
-              <option value="H:1">1 Hour</option>
-              <option value="H:2">2 Hours</option>
-              <option value="H:3">3 Hours</option>
-              <option value="H:4">4 Hours</option>
-              <option value="H:5">5 Hours</option>
-              <option value="H:6">6 Hours</option>
-              <option value="H:7">7 Hours</option>
-            </optgroup>
-            <optgroup label="Days">
-              <option value="D:1">1 Day (8 hours)</option>
-              <option value="D:2">2 Days (16 hours)</option>
-              <option value="D:3">3 Days (24 hours)</option>
-              <option value="D:4">4 Days (32 hours)</option>
-              <option value="D:5">5 Days (40 hours)</option>
-            </optgroup>
-          </select>
-        </div>
+            // Form validity: block day-based leave if start on weekend
+            const baseValid = !!quickLeaveForm.employeeId && !!quickLeaveForm.duration && !!quickLeaveForm.type;
+            const dayBasedInvalid = !!dur && dur.unit === 'D' && startIsWeekend;
+            const formValid = baseValid && !dayBasedInvalid;
 
-        {/* Leave Type */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Leave Type
-          </label>
-          <select
-            value={quickLeaveForm.type}
-            onChange={(e) =>
-              setQuickLeaveForm((prev) => ({ ...prev, type: e.target.value }))
-            }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select Leave Type</option>
-            <option value="Annual Leave">Annual Leave</option>
-            <option value="In Lieu">In Lieu</option>
-          </select>
-        </div>
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Quick Add Leave - {start.toLocaleDateString()}</h3>
+                    <button onClick={() => setShowQuickLeaveModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                  </div>
 
-        <div className="flex justify-end space-x-3 pt-4">
-          <button
-            onClick={() => setShowQuickLeaveModal(false)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={saveQuickLeave}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Add Leave
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                  {/* Warning for weekend start when day-based */}
+                  {dayBasedInvalid && (
+                    <div className="mb-4 p-3 rounded-md bg-yellow-50 text-yellow-800 text-sm">
+                      Day-based leave must start on a weekday. Pick a weekday on the calendar, or choose an hourly duration.
+                    </div>
+                  )}
 
+                  <div className="space-y-4">
+                    {/* Employee */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
+                      <select
+                        value={quickLeaveForm.employeeId}
+                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Employee</option>
+                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Number of Days/Hours */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                      <select
+                        value={quickLeaveForm.duration}
+                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Duration</option>
+                        <optgroup label="Hours">
+                          <option value="H:1">1 Hour</option>
+                          <option value="H:2">2 Hours</option>
+                          <option value="H:3">3 Hours</option>
+                          <option value="H:4">4 Hours</option>
+                          <option value="H:5">5 Hours</option>
+                          <option value="H:6">6 Hours</option>
+                          <option value="H:7">7 Hours</option>
+                        </optgroup>
+                        <optgroup label="Days">
+                          <option value="D:1">1 Day (8 hours)</option>
+                          <option value="D:2">2 Days (16 hours)</option>
+                          <option value="D:3">3 Days (24 hours)</option>
+                          <option value="D:4">4 Days (32 hours)</option>
+                          <option value="D:5">5 Days (40 hours)</option>
+                        </optgroup>
+                      </select>
+
+                      {/* Live preview */}
+                      {dur && (
+                        <p className="mt-2 text-sm text-gray-600">
+                          This will book <span className="font-medium">{previewText}</span>
+                          {dur.unit === 'D' && !dayBasedInvalid && (
+                            <> from <span className="font-medium">{start.toLocaleDateString()}</span> to <span className="font-medium">{end.toLocaleDateString()}</span> (weekends skipped)</>
+                          )}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Leave Type */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
+                      <select
+                        value={quickLeaveForm.type}
+                        onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Leave Type</option>
+                        <option value="Annual Leave">Annual Leave</option>
+                        <option value="In Lieu">In Lieu</option>
+                      </select>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4">
+                      <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                      <button
+                        onClick={saveQuickLeave}
+                        disabled={!formValid}
+                        className={`px-4 py-2 rounded-lg text-white ${formValid ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 opacity-50 cursor-not-allowed'}`}
+                      >
+                        Add Leave
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      );
+    };
 
     ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
   </script>

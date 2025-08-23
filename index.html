@@ -270,7 +270,6 @@
         await setDoc(ref, { ...s, id: ref.id });
       }
 
-      // ✅ NEW: update (merge) a shutdown
       async updateWorkshopShutdown(id, updates) {
         if (!this.db) {
           const arr = await this.fetchWorkshopShutdowns();
@@ -318,7 +317,7 @@
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
 
-      // ✅ NEW: Edit modal state for shutdowns
+      // Edit modal state for shutdowns
       const [showShutdownEditModal, setShowShutdownEditModal] = useState(false);
       const [editingShutdown, setEditingShutdown] = useState(null);
       const [shutdownEditForm, setShutdownEditForm] = useState({ name:'', startDate:'', endDate:'', description:'' });
@@ -382,7 +381,6 @@
       const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return d>0 && r>0 ? `${d}d ${r}h` : (d>0 ? `${d}d` : `${r}h`); };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
-      // Helpers for date comparisons and ranges
       const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
       const formatDateRange = (start, end) => {
         const s = new Date(start), e = new Date(end);
@@ -397,6 +395,25 @@
         const mm = String(dt.getMonth()+1).padStart(2,'0');
         const dd = String(dt.getDate()).padStart(2,'0');
         return `${yyyy}-${mm}-${dd}`;
+      };
+
+      // ---- YEAR-AWARE LEAVE PORTIONING ----
+      const hoursPortionInYear = (leave, year) => {
+        const s = new Date(leave.startDate);
+        const e = new Date(leave.endDate);
+        const sameDay = atMidnight(s).getTime() === atMidnight(e).getTime();
+
+        // If it's a same-day partial (hours < 8), it's all on that single day
+        if (sameDay && leave.hours < 8) {
+          return s.getFullYear() === year ? leave.hours : 0;
+        }
+
+        // Otherwise count 8h per day across the inclusive range, per year
+        let sum = 0;
+        for (let d = atMidnight(s); d <= atMidnight(e); d = new Date(d.getTime() + 86400000)) {
+          if (d.getFullYear() === year) sum += 8;
+        }
+        return sum;
       };
 
       const getMonthDays = () => {
@@ -475,6 +492,38 @@
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
+      // ---------- YEARLY RECONCILIATION (auto-correct balances on load/changes) ----------
+      useEffect(() => {
+        if (!employees.length) return;
+        const year = new Date().getFullYear();
+
+        // Sum current-year leave (exclude In Lieu) per employee
+        const totals = new Map();
+        for (const l of leaveRequests) {
+          if (l.type === 'In Lieu') continue;
+          const portion = hoursPortionInYear(l, year);
+          if (!totals.has(l.employeeId)) totals.set(l.employeeId, 0);
+          totals.set(l.employeeId, totals.get(l.employeeId) + portion);
+        }
+
+        // Apply if mismatched
+        const updates = [];
+        employees.forEach(emp => {
+          const target = totals.get(emp.id) || 0;
+          if ((emp.usedLeave || 0) !== target) {
+            updates.push({ ...emp, usedLeave: target });
+          }
+        });
+
+        if (updates.length) {
+          updates.forEach(u => dbApi.upsertEmployee(u));
+          setEmployees(prev => prev.map(e => {
+            const match = updates.find(u => u.id === e.id);
+            return match ? { ...e, usedLeave: match.usedLeave } : e;
+          }));
+        }
+      }, [leaveRequests, employees]);
+
       // ---------- ACTIONS ----------
       // Save Quick Leave (duration "D:n" or "H:n")
       const saveQuickLeave = async () => {
@@ -497,14 +546,16 @@
           type: quickLeaveForm.type, status: 'approved', hours: totalHours
         };
 
-        // Optimistic UI
+        // Optimistic UI for the leave list
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
-        // (Keep your current balance behavior; can be adjusted to year-based if desired)
+        // Update usedLeave only for the portion in the CURRENT year
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+          const currentYear = new Date().getFullYear();
+          const portion = hoursPortionInYear(newLeave, currentYear);
+          if (changed && portion > 0) {
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + portion };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -559,7 +610,7 @@
         addNotification('Workshop shutdown deleted', 'success');
       };
 
-      // ✅ NEW: open & save edit shutdown
+      // Edit shutdown
       const openShutdownEditModal = (shutdown) => {
         setEditingShutdown(shutdown);
         setShutdownEditForm({
@@ -786,8 +837,16 @@
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
                                           if (leave.type !== 'In Lieu') {
-                                            const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                            const currentYear = new Date().getFullYear();
+                                            const portion = hoursPortionInYear(leave, currentYear);
+                                            if (portion > 0) {
+                                              const changed = employees.find(e => e.id === leave.employeeId);
+                                              if (changed) {
+                                                const updated = { ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - portion) };
+                                                await dbApi.upsertEmployee(updated);
+                                                setEmployees(prev => prev.map(emp => emp.id === updated.id ? updated : emp));
+                                              }
+                                            }
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -867,7 +926,6 @@
                         workshopShutdowns.map(shutdown => (
                           <div key={shutdown.id}
                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                            {/* ✅ Edit + Delete controls */}
                             <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => openShutdownEditModal(shutdown)}
                                       className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
@@ -910,7 +968,7 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
+                    const remainingHours = employee.totalLeave - (employee.usedLeave || 0);
                     const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
                     // Next upcoming leave (start date today or later)
                     const today = atMidnight(new Date());
@@ -947,13 +1005,13 @@
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(Math.max(0, remainingHours))}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%`, backgroundColor: employee.color }} />
                           </div>
 
                           {/* Next Leave block */}
@@ -1120,7 +1178,7 @@
             </div>
           )}
 
-          {/* ✅ Edit Shutdown Modal */}
+          {/* Edit Shutdown Modal */}
           {showShutdownEditModal && editingShutdown && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">

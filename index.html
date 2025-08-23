@@ -53,8 +53,10 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
+    // Offline-first cache
     enableIndexedDbPersistence(db).catch(() => {});
 
+    // Wait for anonymous auth so rules pass
     const ready = new Promise((resolve) => {
       let resolved = false;
       onAuthStateChanged(auth, (user) => {
@@ -62,10 +64,11 @@
       });
       signInAnonymously(auth).catch((err) => {
         console.error("Anon sign-in failed:", err);
-        if (!resolved) resolve(null);
+        if (!resolved) resolve(null); // allow local fallback
       });
     });
 
+    // Expose to the Babel script
     window.__fb = {
       app, auth, db, ready,
       api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
@@ -76,6 +79,7 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
 
+    // Icon component
     const Icon = ({ name, className }) => {
       const paths = {
         calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
@@ -100,7 +104,7 @@
       );
     };
 
-    // ---------- Firestore-backed Database API ----------
+    // ---------- Firestore-backed Database API (realtime + per-doc CRUD) ----------
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
@@ -109,6 +113,7 @@
         this.api = this.fb.api || {};
         this.unsubs = { employees: null, leaves: null, shutdowns: null };
       }
+
       _tsToDate(v) {
         if (!v) return null;
         if (v && typeof v.toDate === "function") return v.toDate();
@@ -117,6 +122,7 @@
       }
       _date(v){ return v instanceof Date ? v : new Date(v); }
 
+      // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
         if (!this.db) return () => {};
         const { collection, query, orderBy, onSnapshot } = this.api;
@@ -127,6 +133,7 @@
         });
         return this.unsubs.employees;
       }
+
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -141,6 +148,7 @@
         });
         return this.unsubs.leaves;
       }
+
       subscribeWorkshopShutdowns(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -156,6 +164,7 @@
         return this.unsubs.shutdowns;
       }
 
+      // ----- LOCAL FALLBACK FETCHES -----
       async fetchEmployees() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_employees');
@@ -169,6 +178,7 @@
         const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
         return snap.docs.map(d => d.data());
       }
+
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
@@ -182,6 +192,7 @@
           return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
         });
       }
+
       async fetchWorkshopShutdowns() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_workshop_shutdowns');
@@ -196,6 +207,7 @@
         });
       }
 
+      // ----- PER-DOC WRITES -----
       async upsertEmployee(emp) {
         if (!this.db) {
           const arr = await this.fetchEmployees();
@@ -207,6 +219,7 @@
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
       }
+
       async deleteEmployee(id) {
         if (!this.db) {
           const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
@@ -228,11 +241,13 @@
         const ref = doc(collection(this.db, "leave_requests"));
         await setDoc(ref, { ...leave, id: ref.id });
       }
+
       async updateLeave(leaveId, partial) {
         if (!this.db) return;
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
       }
+
       async deleteLeaveRequest(id) {
         if (!this.db) {
           const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
@@ -242,6 +257,7 @@
         const { doc, deleteDoc } = this.api;
         await deleteDoc(doc(this.db, "leave_requests", String(id)));
       }
+
       async createShutdown(s) {
         if (!this.db) {
           const arr = await this.fetchWorkshopShutdowns();
@@ -253,6 +269,22 @@
         const ref = doc(collection(this.db, "workshop_shutdowns"));
         await setDoc(ref, { ...s, id: ref.id });
       }
+
+      async updateWorkshopShutdown(id, updates) {
+        if (!this.db) {
+          const arr = await this.fetchWorkshopShutdowns();
+          const newArr = arr.map(x => x.id === id ? { ...x, ...updates } : x);
+          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(newArr.map(x => ({
+            ...x,
+            startDate: new Date(x.startDate).toISOString(),
+            endDate: new Date(x.endDate).toISOString(),
+          }))));
+          return;
+        }
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), updates, { merge: true });
+      }
+
       async deleteWorkshopShutdown(id) {
         if (!this.db) {
           const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
@@ -265,7 +297,7 @@
     }
 
     const LeaveCalendar = () => {
-      // State
+      // State management
       const [currentDate, setCurrentDate] = useState(new Date());
       const [viewMode, setViewMode] = useState('month');
       const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
@@ -281,9 +313,14 @@
       const [showSidebar, setShowSidebar] = useState(false);
       const [currentView, setCurrentView] = useState('calendar');
 
-      // Workshop shutdowns
+      // Workshop shutdowns state
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
+
+      // Edit modal state for shutdowns
+      const [showShutdownEditModal, setShowShutdownEditModal] = useState(false);
+      const [editingShutdown, setEditingShutdown] = useState(null);
+      const [shutdownEditForm, setShutdownEditForm] = useState({ name:'', startDate:'', endDate:'', description:'' });
 
       const addNotification = useCallback((message, type='info') => {
         const id = Date.now();
@@ -331,20 +368,19 @@
         return hs;
       };
 
-      // ✅ UPDATED: duration model "D:n"/"H:n"
+      // Duration model "D:n" or "H:n"
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: '1',
-        duration: 'D:1',
+        duration: 'D:1', // default 1 day
         type: 'Annual Leave'
       });
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
 
-      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
+      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return d>0 && r>0 ? `${d}d ${r}h` : (d>0 ? `${d}d` : `${r}h`); };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
-      // 🔹 Helpers for upcoming leave display
       const atMidnight = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
       const formatDateRange = (start, end) => {
         const s = new Date(start), e = new Date(end);
@@ -352,6 +388,32 @@
         const opts = { day: '2-digit', month: '2-digit', year: 'numeric' };
         return same ? s.toLocaleDateString(undefined, opts)
                     : `${s.toLocaleDateString(undefined, opts)} - ${e.toLocaleDateString(undefined, opts)}`;
+      };
+      const toInputDate = (d) => {
+        const dt = new Date(d);
+        const yyyy = dt.getFullYear();
+        const mm = String(dt.getMonth()+1).padStart(2,'0');
+        const dd = String(dt.getDate()).padStart(2,'0');
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      // ---- YEAR-AWARE LEAVE PORTIONING ----
+      const hoursPortionInYear = (leave, year) => {
+        const s = new Date(leave.startDate);
+        const e = new Date(leave.endDate);
+        const sameDay = atMidnight(s).getTime() === atMidnight(e).getTime();
+
+        // If it's a same-day partial (hours < 8), it's all on that single day
+        if (sameDay && leave.hours < 8) {
+          return s.getFullYear() === year ? leave.hours : 0;
+        }
+
+        // Otherwise count 8h per day across the inclusive range, per year
+        let sum = 0;
+        for (let d = atMidnight(s); d <= atMidnight(e); d = new Date(d.getTime() + 86400000)) {
+          if (d.getFullYear() === year) sum += 8;
+        }
+        return sum;
       };
 
       const getMonthDays = () => {
@@ -405,9 +467,10 @@
         }
       };
 
-      // ---------- INIT ----------
+      // ---------- INITIALISE ----------
       useEffect(() => {
         let unsubEmp = null, unsubLeave = null, unsubShut = null;
+
         const init = async () => {
           if (window.__fb?.ready) { await window.__fb.ready; }
           if (window.__fb?.db) {
@@ -424,11 +487,45 @@
           setIsLoading(false);
           setTimeout(() => setShowConnectionIndicator(false), 3000);
         };
+
         init();
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
+      // ---------- YEARLY RECONCILIATION (auto-correct balances on load/changes) ----------
+      useEffect(() => {
+        if (!employees.length) return;
+        const year = new Date().getFullYear();
+
+        // Sum current-year leave (exclude In Lieu) per employee
+        const totals = new Map();
+        for (const l of leaveRequests) {
+          if (l.type === 'In Lieu') continue;
+          const portion = hoursPortionInYear(l, year);
+          if (!totals.has(l.employeeId)) totals.set(l.employeeId, 0);
+          totals.set(l.employeeId, totals.get(l.employeeId) + portion);
+        }
+
+        // Apply if mismatched
+        const updates = [];
+        employees.forEach(emp => {
+          const target = totals.get(emp.id) || 0;
+          if ((emp.usedLeave || 0) !== target) {
+            updates.push({ ...emp, usedLeave: target });
+          }
+        });
+
+        if (updates.length) {
+          updates.forEach(u => dbApi.upsertEmployee(u));
+          setEmployees(prev => prev.map(e => {
+            const match = updates.find(u => u.id === e.id);
+            return match ? { ...e, usedLeave: match.usedLeave } : e;
+          }));
+        }
+      }, [leaveRequests, employees]);
+
       // ---------- ACTIONS ----------
+      // Save Quick Leave (duration "D:n" or "H:n")
       const saveQuickLeave = async () => {
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
@@ -449,17 +546,22 @@
           type: quickLeaveForm.type, status: 'approved', hours: totalHours
         };
 
+        // Optimistic UI for the leave list
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
+        // Update usedLeave only for the portion in the CURRENT year
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+          const currentYear = new Date().getFullYear();
+          const portion = hoursPortionInYear(newLeave, currentYear);
+          if (changed && portion > 0) {
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + portion };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
         }
 
-        await dbApi.createLeave(newLeave);
+        await dbApi.createLeave(newLeave);  // listeners will sync real doc
         setShowQuickLeaveModal(false);
         addNotification('Leave added', 'success');
       };
@@ -506,6 +608,40 @@
         if (!confirm('Are you sure you want to delete this workshop shutdown?')) return;
         await dbApi.deleteWorkshopShutdown(shutdownId);
         addNotification('Workshop shutdown deleted', 'success');
+      };
+
+      // Edit shutdown
+      const openShutdownEditModal = (shutdown) => {
+        setEditingShutdown(shutdown);
+        setShutdownEditForm({
+          name: shutdown.name || '',
+          startDate: toInputDate(shutdown.startDate),
+          endDate: toInputDate(shutdown.endDate),
+          description: shutdown.description || ''
+        });
+        setShowShutdownEditModal(true);
+      };
+
+      const saveShutdownEdit = async () => {
+        if (!shutdownEditForm.name.trim() || !shutdownEditForm.startDate || !shutdownEditForm.endDate) {
+          addNotification('Please fill in all required fields', 'error');
+          return;
+        }
+        const startDate = new Date(shutdownEditForm.startDate);
+        const endDate = new Date(shutdownEditForm.endDate);
+        if (endDate < startDate) {
+          addNotification('End date must be after start date', 'error');
+          return;
+        }
+        await dbApi.updateWorkshopShutdown(editingShutdown.id, {
+          name: shutdownEditForm.name.trim(),
+          startDate,
+          endDate,
+          description: shutdownEditForm.description || ''
+        });
+        setShowShutdownEditModal(false);
+        setEditingShutdown(null);
+        addNotification('Workshop shutdown updated', 'success');
       };
 
       const openEmployeeModal = (employee=null) => {
@@ -701,8 +837,16 @@
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
                                           if (leave.type !== 'In Lieu') {
-                                            const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                            const currentYear = new Date().getFullYear();
+                                            const portion = hoursPortionInYear(leave, currentYear);
+                                            if (portion > 0) {
+                                              const changed = employees.find(e => e.id === leave.employeeId);
+                                              if (changed) {
+                                                const updated = { ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - portion) };
+                                                await dbApi.upsertEmployee(updated);
+                                                setEmployees(prev => prev.map(emp => emp.id === updated.id ? updated : emp));
+                                              }
+                                            }
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -782,7 +926,11 @@
                         workshopShutdowns.map(shutdown => (
                           <div key={shutdown.id}
                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openShutdownEditModal(shutdown)}
+                                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
+                                <Icon name="edit" className="h-4 w-4" />
+                              </button>
                               <button onClick={() => deleteWorkshopShutdown(shutdown.id)}
                                       className="p-1 text-gray-400 hover:text-red-600 transition-colors">
                                 <Icon name="trash" className="h-4 w-4" />
@@ -820,15 +968,14 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
+                    const remainingHours = employee.totalLeave - (employee.usedLeave || 0);
                     const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-
-                    // 🔹 Next upcoming leave for this employee
+                    // Next upcoming leave (start date today or later)
                     const today = atMidnight(new Date());
                     const upcomingLeave = leaveRequests
                       .filter(l => l.employeeId === employee.id)
                       .filter(l => atMidnight(l.startDate) >= today)
-                      .sort((a,b) => atMidnight(a.startDate) - atMidnight(b.startDate))[0];
+                      .sort((a, b) => atMidnight(a.startDate) - atMidnight(b.startDate))[0];
 
                     return (
                       <div key={employee.id}
@@ -858,16 +1005,16 @@
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(Math.max(0, remainingHours))}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%`, backgroundColor: employee.color }} />
                           </div>
 
-                          {/* 🔹 Next Leave block */}
+                          {/* Next Leave block */}
                           <div className="mt-4">
                             <h4 className="text-sm font-medium text-gray-700 mb-2">Next Leave</h4>
                             {upcomingLeave ? (
@@ -1025,6 +1172,68 @@
                   <div className="flex justify-end space-x-3 pt-4">
                     <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
                     <button onClick={saveQuickLeave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Leave</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Shutdown Modal */}
+          {showShutdownEditModal && editingShutdown && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Edit Workshop Shutdown</h3>
+                  <button onClick={() => { setShowShutdownEditModal(false); setEditingShutdown(null); }}
+                          className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Shutdown Name *</label>
+                    <input type="text"
+                           value={shutdownEditForm.name}
+                           onChange={(e) => setShutdownEditForm(prev => ({...prev, name: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., Christmas Break, Annual Maintenance" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
+                    <input type="date"
+                           value={shutdownEditForm.startDate}
+                           onChange={(e) => setShutdownEditForm(prev => ({...prev, startDate: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
+                    <input type="date"
+                           value={shutdownEditForm.endDate}
+                           onChange={(e) => setShutdownEditForm(prev => ({...prev, endDate: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <textarea
+                      value={shutdownEditForm.description}
+                      onChange={(e) => setShutdownEditForm(prev => ({...prev, description: e.target.value}))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                      placeholder="Optional description..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button onClick={() => { setShowShutdownEditModal(false); setEditingShutdown(null); }}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800">
+                      Cancel
+                    </button>
+                    <button onClick={saveShutdownEdit}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                      Save Changes
+                    </button>
                   </div>
                 </div>
               </div>

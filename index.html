@@ -166,7 +166,7 @@
         this.unsubs.shutdowns = onSnapshot(ref, (snap) => {
           const rows = snap.docs.map(d => {
             const v = d.data();
-            return { ...v, id: v.id ?? d.id, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+            return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
           });
           setter(rows);
         });
@@ -218,7 +218,7 @@
         const snap = await getDocs(collection(this.db, "workshop_shutdowns"));
         return snap.docs.map(d => {
           const v = d.data();
-          return { ...v, id: v.id ?? d.id, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+          return { ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
         });
       }
 
@@ -227,7 +227,7 @@
         if (!this.db) {
           const arr = await this.fetchEmployees();
           const i = arr.findIndex(e => e.id === emp.id);
-          if (i >= 0) arr[i] = emp; else arr.push(emp);
+        if (i >= 0) arr[i] = emp; else arr.push(emp);
           localStorage.setItem('atkin_employees', JSON.stringify(arr));
           return;
         }
@@ -287,25 +287,6 @@
         await setDoc(ref, { ...s, id: ref.id });
       }
 
-      async updateWorkshopShutdown(id, partial) {
-        if (!id) return;
-        if (!this.db) {
-          const arr = await this.fetchWorkshopShutdowns();
-          const idx = arr.findIndex(x => x.id === id);
-          if (idx >= 0) {
-            arr[idx] = { ...arr[idx], ...partial };
-            localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({
-              ...x,
-              startDate: new Date(x.startDate).toISOString(),
-              endDate: new Date(x.endDate).toISOString()
-            }))));
-          }
-          return;
-        }
-        const { doc, setDoc } = this.api;
-        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), partial, { merge: true });
-      }
-
       async deleteWorkshopShutdown(id) {
         if (!this.db) {
           const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
@@ -337,10 +318,6 @@
       // Workshop shutdowns state
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
-
-      // NEW: edit shutdown modal state
-      const [editingShutdown, setEditingShutdown] = useState(null);
-      const [shutdownEditForm, setShutdownEditForm] = useState({ id:'', name:'', startDate:'', endDate:'', description:'' });
 
       const addNotification = useCallback((message, type='info') => {
         const id = Date.now();
@@ -421,51 +398,6 @@
         return d;
       };
 
-      // iterate date by date (inclusive)
-      const eachDate = (start, end) => {
-        const out = [];
-        const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-        const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-        for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) out.push(new Date(d));
-        return out;
-      };
-
-      // compute used hours for an employee in a given calendar year from leave records
-      const computeUsedHoursForEmployee = (empId, year = new Date().getFullYear()) => {
-        let hours = 0;
-        const empLeaves = leaveRequests.filter(l => l.employeeId === empId && l.type !== 'In Lieu');
-        for (const l of empLeaves) {
-          const s = new Date(l.startDate);
-          const e = new Date(l.endDate);
-          if (l.hours % 8 !== 0) {
-            if (s.getFullYear() === year && isWorkingDay(s)) hours += l.hours;
-          } else {
-            for (const d of eachDate(s, e)) {
-              if (isWorkingDay(d) && d.getFullYear() === year) hours += 8;
-            }
-          }
-        }
-        return hours;
-      };
-
-      // helpers for "Next leave" on team card
-      const startOfToday = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
-      const workingDaysBetween = (s, e) => eachDate(s, e).filter(isWorkingDay).length;
-      const nextLeaveForEmployee = (empId) => {
-        const today = startOfToday();
-        const upcoming = leaveRequests
-          .filter(l => l.employeeId === empId && new Date(l.startDate) >= today)
-          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
-        return upcoming[0] || null;
-      };
-      const formatLeaveAmount = (leave) => {
-        if (!leave) return '';
-        const s = new Date(leave.startDate);
-        const e = new Date(leave.endDate);
-        if ((leave.hours || 0) % 8 !== 0) return `${leave.hours}h`;
-        return `${workingDaysBetween(s, e)}d`;
-      };
-
       // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: "",
@@ -529,6 +461,7 @@
         }));
 
         if (!isWorkingDay(date)) {
+          // separately show bank holiday label (weekends just get grey background)
           if (isBankHolidayDate(date)) {
             const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
             res.push({
@@ -536,7 +469,7 @@
               type: 'Bank Holiday',
               status: 'bankholiday',
               isBankHoliday: true,
-              name: bh?.name || 'Bank Holiday'
+              name: bh.name
             });
           }
         }
@@ -544,14 +477,14 @@
         return res;
       };
 
-      // badge colors
+      // (Re)include in case it was missing in your last paste
       const getStatusColor = (status) => {
         switch (status) {
-          case 'approved':    return 'bg-green-100 text-green-800';
-          case 'pending':     return 'bg-yellow-100 text-yellow-800';
-          case 'shutdown':    return 'bg-red-100 text-red-800';
+          case 'approved': return 'bg-green-100 text-green-800';
+          case 'pending': return 'bg-yellow-100 text-yellow-800';
+          case 'shutdown': return 'bg-red-100 text-red-800';
           case 'bankholiday': return 'bg-purple-100 text-purple-800';
-          default:            return 'bg-gray-100 text-gray-800';
+          default: return 'bg-gray-100 text-gray-800';
         }
       };
 
@@ -582,6 +515,7 @@
 
       // ---------- ACTIONS ----------
       const saveQuickLeave = async () => {
+        // basic validation
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
           return;
@@ -598,7 +532,9 @@
         let start = nextWorkingDay(new Date(selectedDate));
         let end   = new Date(start);
 
-        if (!isHours) {
+        if (isHours) {
+          // hours stay on the same (next working) day
+        } else {
           // days: skip weekends + bank holidays
           end = addWorkingDays(start, n);
         }
@@ -616,6 +552,15 @@
 
         // Optimistic UI
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
+        if (quickLeaveForm.type !== 'In Lieu') {
+          const changed = employees.find(e => e.id === newLeave.employeeId);
+          if (changed) {
+            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
+        }
 
         await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
@@ -664,52 +609,6 @@
         if (!confirm('Are you sure you want to delete this workshop shutdown?')) return;
         await dbApi.deleteWorkshopShutdown(shutdownId);
         addNotification('Workshop shutdown deleted', 'success');
-      };
-
-      // ----- EDIT WORKSHOP SHUTDOWN -----
-      const toInputDate = (d) => {
-        const x = new Date(d);
-        const yyyy = x.getFullYear();
-        const mm = String(x.getMonth()+1).padStart(2,'0');
-        const dd = String(x.getDate()).padStart(2,'0');
-        return `${yyyy}-${mm}-${dd}`;
-      };
-
-      const openEditShutdown = (shutdown) => {
-        setEditingShutdown(shutdown);
-        setShutdownEditForm({
-          id: shutdown.id,
-          name: shutdown.name || '',
-          startDate: toInputDate(shutdown.startDate),
-          endDate: toInputDate(shutdown.endDate),
-          description: shutdown.description || ''
-        });
-      };
-
-      const saveEditedShutdown = async () => {
-        if (!shutdownEditForm.name.trim() || !shutdownEditForm.startDate || !shutdownEditForm.endDate) {
-          addNotification('Please fill in all required fields', 'error');
-          return;
-        }
-        const startDate = new Date(shutdownEditForm.startDate);
-        const endDate = new Date(shutdownEditForm.endDate);
-        if (endDate < startDate) {
-          addNotification('End date must be after start date', 'error');
-          return;
-        }
-
-        await dbApi.updateWorkshopShutdown(shutdownEditForm.id, {
-          name: shutdownEditForm.name,
-          startDate,
-          endDate,
-          description: shutdownEditForm.description
-        });
-        setEditingShutdown(null);
-        addNotification('Workshop shutdown updated', 'success');
-      };
-
-      const closeEditShutdown = () => {
-        setEditingShutdown(null);
       };
 
       const openEmployeeModal = (employee=null) => {
@@ -872,18 +771,20 @@
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
                           const weekend = isWeekendDay(date);
+                          const nonWorking = !isWorkingDay(date);
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-blue-50 border-blue-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-red-50 border-red-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
-                                <div className={`text-sm font-medium ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
+                                <div className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </div>
                                 {isCurrentMonth && isWorkingDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
+                                    // open modal with empty selections (placeholders visible)
                                     setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
                                     setShowQuickLeaveModal(true);
                                   }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
@@ -905,6 +806,10 @@
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
+                                          if (leave.type !== 'In Lieu') {
+                                            const changed = employees.find(e => e.id === leave.employeeId);
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                          }
                                           addNotification('Leave removed', 'success');
                                         }
                                       }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
@@ -983,17 +888,13 @@
                         workshopShutdowns.map(shutdown => (
                           <div key={shutdown.id}
                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                            <div className="absolute top-3 right-3 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => openEditShutdown(shutdown)}
-                                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
-                                <Icon name="edit" className="h-4 w-4" />
-                              </button>
+                            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => deleteWorkshopShutdown(shutdown.id)}
                                       className="p-1 text-gray-400 hover:text-red-600 transition-colors">
                                 <Icon name="trash" className="h-4 w-4" />
                               </button>
                             </div>
-                            <div className="pr-10">
+                            <div className="pr-8">
                               <h4 className="font-medium text-gray-900">{shutdown.name}</h4>
                               <p className="text-sm text-gray-600 mt-1">
                                 {new Date(shutdown.startDate).toLocaleDateString()} - {new Date(shutdown.endDate).toLocaleDateString()}
@@ -1025,15 +926,9 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const nowYear = new Date().getFullYear();
-                    const usedHoursThisYear = computeUsedHoursForEmployee(employee.id, nowYear);
-                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHoursThisYear);
-                    const usagePercentage = employee.totalLeave ? (usedHoursThisYear / employee.totalLeave) * 100 : 0;
-
-                    const nxt = nextLeaveForEmployee(employee.id);
-                    const nextLabel = nxt
-                      ? `${new Date(nxt.startDate).toLocaleDateString()} • ${formatLeaveAmount(nxt)}`
-                      : '—';
+                    const remainingHours = employee.totalLeave - employee.usedLeave;
+                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
+                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
 
                     return (
                       <div key={employee.id}
@@ -1062,21 +957,28 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
-                            <div><span className="text-gray-600">Used {nowYear}:</span><p className="font-medium">{formatHours(usedHoursThisYear)}</p></div>
-                            <div><span className="text-gray-600">Remaining {nowYear}:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
-
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${Math.min(100, usagePercentage)}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
                           </div>
-
-                          <div className="mt-3 text-sm flex items-center justify-between">
-                            <span className="text-gray-600">Next leave:</span>
-                            <span className="font-medium">{nextLabel}</span>
-                          </div>
+                          {recentLeaves.length > 0 && (
+                            <div className="mt-4">
+                              <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Leave</h4>
+                              <div className="space-y-1">
+                                {recentLeaves.map(leave => (
+                                  <div key={leave.id} className="flex justify-between items-center text-xs">
+                                    <span className={`px-2 py-1 rounded ${getStatusColor(leave.status)}`}>{leave.type}</span>
+                                    <span className="text-gray-500">{new Date(leave.startDate).toLocaleDateString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1125,12 +1027,11 @@
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Used Leave (legacy)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Used Leave (hours)</label>
                     <input type="number" value={employeeForm.usedLeave}
                            onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                            min="0" />
-                    <p className="text-xs text-gray-500 mt-1">Note: Display now derives “Used” from this year’s bookings.</p>
                   </div>
 
                   <div>
@@ -1179,7 +1080,7 @@
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                    <label className="block text sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
                     <select
                       value={quickLeaveForm.duration}
                       onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}
@@ -1226,67 +1127,6 @@
                       className={`px-4 py-2 rounded-lg text-white ${addEnabled ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'}`}
                     >
                       Add Leave
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* EDIT SHUTDOWN MODAL */}
-          {editingShutdown && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Edit Workshop Shutdown</h3>
-                  <button onClick={closeEditShutdown} className="text-gray-400 hover:text-gray-600">✕</button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Shutdown Name *</label>
-                    <input
-                      type="text"
-                      value={shutdownEditForm.name}
-                      onChange={(e) => setShutdownEditForm(prev => ({...prev, name: e.target.value}))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
-                    <input
-                      type="date"
-                      value={shutdownEditForm.startDate}
-                      onChange={(e) => setShutdownEditForm(prev => ({...prev, startDate: e.target.value}))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
-                    <input
-                      type="date"
-                      value={shutdownEditForm.endDate}
-                      onChange={(e) => setShutdownEditForm(prev => ({...prev, endDate: e.target.value}))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                    <textarea
-                      value={shutdownEditForm.description}
-                      onChange={(e) => setShutdownEditForm(prev => ({...prev, description: e.target.value}))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex justify-end space-x-3 pt-4">
-                    <button onClick={closeEditShutdown} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
-                    <button onClick={saveEditedShutdown} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      Save Changes
                     </button>
                   </div>
                 </div>

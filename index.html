@@ -994,13 +994,12 @@
                           </div>
                         </div>
 
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total (this year’s allowance):</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
-                            <div><span className="text-gray-600">Used (this year):</span><p className="font-medium">{formatHours(usedHoursThisYear)}</p></div>
-                            <div><span className="text-gray-600">Remaining (this year):</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
-                            <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
-                          </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+  <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
+  <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(usedHoursThisYear)}</p></div>
+  <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+  <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
+                        </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
                                  style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%`, backgroundColor: employee.color }} />

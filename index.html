@@ -227,7 +227,7 @@
         if (!this.db) {
           const arr = await this.fetchEmployees();
           const i = arr.findIndex(e => e.id === emp.id);
-        if (i >= 0) arr[i] = emp; else arr.push(emp);
+          if (i >= 0) arr[i] = emp; else arr.push(emp);
           localStorage.setItem('atkin_employees', JSON.stringify(arr));
           return;
         }
@@ -398,6 +398,39 @@
         return d;
       };
 
+      // --- derive used hours from leave rows, for a given calendar year ---
+      const hoursFromLeaveInYear = (leave, year) => {
+        const s = new Date(leave.startDate);
+        const e = new Date(leave.endDate);
+
+        // single-day (also covers hour-based leave)
+        if (s.toDateString() === e.toDateString()) {
+          if (s.getFullYear() !== year) return 0;
+          return isWorkingDay(s) ? Math.min(leave.hours || 0, 8) : 0;
+        }
+
+        // multi-day: count working days within the target year
+        let hours = 0;
+        const d = new Date(s);
+        while (d <= e) {
+          if (d.getFullYear() === year && isWorkingDay(d)) hours += 8;
+          d.setDate(d.getDate() + 1);
+        }
+        // safety: never exceed recorded hours
+        return Math.min(hours, leave.hours || hours);
+      };
+
+      // Status badge colours
+      const getStatusColor = (status) => {
+        switch(status){
+          case 'approved': return 'bg-green-100 text-green-800';
+          case 'pending': return 'bg-yellow-100 text-yellow-800';
+          case 'shutdown': return 'bg-red-100 text-red-800';
+          case 'bankholiday': return 'bg-purple-100 text-purple-800';
+          default: return 'bg-gray-100 text-gray-800';
+        }
+      };
+
       // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({
         employeeId: "",
@@ -408,7 +441,7 @@
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
 
-      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
+      const formatHours = (h) => { const d=Math.floor((h||0)/8), r=(h||0)%8; return r>0?`${d}d ${r}h`:`${d}d`; };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
 
       const getMonthDays = () => {
@@ -475,17 +508,6 @@
         }
 
         return res;
-      };
-
-      // (Re)include in case it was missing in your last paste
-      const getStatusColor = (status) => {
-        switch (status) {
-          case 'approved': return 'bg-green-100 text-green-800';
-          case 'pending': return 'bg-yellow-100 text-yellow-800';
-          case 'shutdown': return 'bg-red-100 text-red-800';
-          case 'bankholiday': return 'bg-purple-100 text-purple-800';
-          default: return 'bg-gray-100 text-gray-800';
-        }
       };
 
       // ---------- INITIALISE ----------
@@ -556,7 +578,7 @@
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -771,7 +793,6 @@
                           const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
                           const isToday = date.toDateString() === new Date().toDateString();
                           const weekend = isWeekendDay(date);
-                          const nonWorking = !isWorkingDay(date);
                           const dayLeaves = getLeaveForDate(date);
                           return (
                             <div key={idx}
@@ -808,7 +829,7 @@
                                           await dbApi.deleteLeaveRequest(leave.id);
                                           if (leave.type !== 'In Lieu') {
                                             const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, changed.usedLeave - leave.hours) });
+                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - (leave.hours || 0)) });
                                           }
                                           addNotification('Leave removed', 'success');
                                         }
@@ -926,9 +947,27 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {employees.map(employee => {
-                    const remainingHours = employee.totalLeave - employee.usedLeave;
-                    const usagePercentage = (employee.usedLeave / employee.totalLeave) * 100 || 0;
-                    const recentLeaves = leaveRequests.filter(leave => leave.employeeId === employee.id).slice(0, 3);
+                    const currentYear = new Date().getFullYear();
+
+                    // derive used hours from actual leave rows for this year (exclude In Lieu)
+                    const usedHoursThisYear = leaveRequests
+                      .filter(l => l.employeeId === employee.id && l.type !== 'In Lieu')
+                      .reduce((sum, l) => sum + hoursFromLeaveInYear(l, currentYear), 0);
+
+                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedHoursThisYear);
+                    const usagePercentage = (employee.totalLeave > 0)
+                      ? (usedHoursThisYear / employee.totalLeave) * 100
+                      : 0;
+
+                    // next upcoming leave with days/hours display
+                    const now = new Date();
+                    const upcoming = leaveRequests
+                      .filter(l => l.employeeId === employee.id && new Date(l.startDate) >= now)
+                      .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))[0];
+
+                    const upcomingLabel = upcoming
+                      ? `${upcoming.type} • ${formatHours(upcoming.hours || 0)} • ${new Date(upcoming.startDate).toLocaleDateString()}`
+                      : 'No upcoming leave';
 
                     return (
                       <div key={employee.id}
@@ -957,28 +996,23 @@
 
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave)}</p></div>
-                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(employee.usedLeave)}</p></div>
-                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Total (this year’s allowance):</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Used (this year):</span><p className="font-medium">{formatHours(usedHoursThisYear)}</p></div>
+                            <div><span className="text-gray-600">Remaining (this year):</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
                             <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="h-3 rounded-full transition-all duration-300"
-                                 style={{ width: `${usagePercentage}%`, backgroundColor: employee.color }} />
+                                 style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%`, backgroundColor: employee.color }} />
                           </div>
-                          {recentLeaves.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Up coming leave</h4>
-                              <div className="space-y-1">
-                                {recentLeaves.map(leave => (
-                                  <div key={leave.id} className="flex justify-between items-center text-xs">
-                                    <span className={`px-2 py-1 rounded ${getStatusColor(leave.status)}`}>{leave.type}</span>
-                                    <span className="text-gray-500">{new Date(leave.startDate).toLocaleDateString()}</span>
-                                  </div>
-                                ))}
-                              </div>
+
+                          {/* Upcoming Leave */}
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Upcoming Leave</h4>
+                            <div className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">
+                              {upcomingLabel}
                             </div>
-                          )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1015,9 +1049,6 @@
                       <option value="Workshop">Workshop</option>
                       <option value="Design">Design</option>
                       <option value="Sales">Sales</option>
-                      <option value="CNC">CNC</option>
-                      <option value="Finishing">Finishing</option>
-                      <option value="Setup">Setup</option>
                     </select>
                   </div>
 
@@ -1083,7 +1114,7 @@
                   </div>
 
                   <div>
-                    <label className="block text sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
                     <select
                       value={quickLeaveForm.duration}
                       onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}

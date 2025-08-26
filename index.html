@@ -396,47 +396,27 @@
         return hs;
       };
 
-      // ---- bookable-day helpers (skip weekends, bank holidays, and shutdowns) ----
-const isSameDay = (a, b) => a.toDateString() === b.toDateString();
-
-const isBankHolidayDate = (date) =>
-  getBankHolidays(date.getFullYear()).some(h => isSameDay(h.date, date));
-
-const isWeekendDay = (date) => date.getDay() === 0 || date.getDay() === 6;
-
-// NEW: any date inside a workshop shutdown range
-const isShutdownDay = (date) =>
-  workshopShutdowns.some(s => {
-    const start = new Date(s.startDate), end = new Date(s.endDate);
-    // normalise to dates only
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const s0 = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const e0 = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-    return d >= s0 && d <= e0;
-  });
-
-// NEW: the single source of truth for whether a day may be booked
-const isBookableDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date) && !isShutdownDay(date);
-
-// NEW: next bookable day from (or after) a given date
-const nextBookableDay = (date) => {
-  const d = new Date(date);
-  while (!isBookableDay(d)) d.setDate(d.getDate() + 1);
-  return d;
-};
-
-// NEW: add N bookable days starting from `start` (inclusive)
-const addBookableDays = (start, days) => {
-  let d = nextBookableDay(start);
-  if (days <= 1) return d;
-  let remaining = days - 1;
-  while (remaining > 0) {
-    d.setDate(d.getDate() + 1);
-    if (isBookableDay(d)) remaining--;
-  }
-  return d;
-};
-
+      // ---- working-day helpers (weekends + bank holidays) ----
+      const isSameDay = (a, b) => a.toDateString() === b.toDateString();
+      const isBankHolidayDate = (date) =>
+        getBankHolidays(date.getFullYear()).some(h => isSameDay(h.date, date));
+      const isWeekendDay = (date) => date.getDay() === 0 || date.getDay() === 6;
+      const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
+      const nextWorkingDay = (date) => {
+        const d = new Date(date);
+        while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
+        return d;
+      };
+      const addWorkingDays = (start, days) => {
+        let d = nextWorkingDay(start);
+        if (days <= 1) return d;
+        let remaining = days - 1;
+        while (remaining > 0) {
+          d.setDate(d.getDate() + 1);
+          if (isWorkingDay(d)) remaining--;
+        }
+        return d;
+      };
 
       // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({

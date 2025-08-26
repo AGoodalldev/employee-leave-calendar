@@ -1273,11 +1273,22 @@
 
                 <div className="mb-3">
                   <button
-                    onClick={() => { setSelectedDate(drawerDate); setQuickLeaveForm({ employeeId:"", duration:"", type:"" }); setShowQuickLeaveModal(true); }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Add Leave
-                  </button>
+  onClick={() => {
+    // prep the form
+    setSelectedDate(drawerDate);
+    setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
+
+    // close the drawer so the modal is fully visible
+    setShowDayDrawer(false);
+
+    // open the modal on the next tick (after the drawer collapses)
+    setTimeout(() => setShowQuickLeaveModal(true), 0);
+  }}
+  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+>
+  Add Leave
+</button>
+
                 </div>
 
                 <div className="space-y-3">

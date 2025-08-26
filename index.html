@@ -618,21 +618,7 @@
         // Close & notify
         setShowQuickLeaveModal(false);
         addNotification(isHours ? 'Leave (hours) added' : 'Leave (daily entries) added', 'success');
-      };setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
-
-        if (quickLeaveForm.type !== 'In Lieu') {
-          const changed = employees.find(e => e.id === newLeave.employeeId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
-            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-            await dbApi.upsertEmployee(updated);
-          }
-        }
-
-        await dbApi.createLeave(newLeave);
-        setShowQuickLeaveModal(false);
-        addNotification('Leave added', 'success');
-      };
+      
 
       const saveEmployee = async () => {
         if (!employeeForm.name.trim() || !employeeForm.department.trim()) { addNotification('Please fill in all required fields', 'error'); return; }

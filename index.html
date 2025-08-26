@@ -193,7 +193,7 @@
         const { collection, getDocs } = this.api;
         const snap = await getDocs(collection(this.db, "leave_requests"));
         return snap.docs.map(d => {
-          const v = d.data();
+          const v = d.data().filter(Boolean);
           return {
             id: v.id ?? d.id,
             ...v,
@@ -1071,7 +1071,7 @@
                       {workshopShutdowns.length === 0 ? (
                         <p className="text-gray-500 text-sm italic">No workshop shutdowns scheduled</p>
                       ) : (
-                        workshopShutdowns.map(shutdown => (
+                        (workshopShutdowns || []).filter(Boolean).map(shutdown => (
                           <div key={shutdown.id}
                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
                             <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

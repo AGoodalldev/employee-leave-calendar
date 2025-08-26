@@ -346,7 +346,7 @@
       const addNotification = useCallback((message, type='info') => {
         const id = Date.now();
         setNotifications(prev => [...prev, { id, message, type, show:false }]);
-        setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show:true } : n)), 100);
+        setTimeout(() => setNotifications(prev => ((prev || []).filter(Boolean).map(n => n && (n.id === id ? { ...n, show:true } : n)))), 100);
         setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
       }, []);
 
@@ -776,7 +776,7 @@
         addNotification('Leave updated', 'success');
         setEditingLeave(null);
       };// optimistic update
-        setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
+        setLeaveRequests(prev => ((prev || []).filter(Boolean).map(l => l && (l.id === editingLeave.id ? { ...l, ...patch } : l))));
         await dbApi.updateLeave(editingLeave.id, patch);
         addNotification('Leave updated', 'success');
         setEditingLeave(null);
@@ -954,7 +954,7 @@
                               <div className="flex justify-between items-start mb-1">
                                 {/* tap date number to expand */}
                                 <button
-                                  onClick={() => openDayDrawer(date)}
+                                  onClick={() => { setDrawerDate(date); setShowDayDrawer(true); setEditingLeave(null); }}
                                   className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'} hover:underline cursor-pointer`}
                                   title="Tap to expand day"
                                 >

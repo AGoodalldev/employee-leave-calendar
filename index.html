@@ -130,7 +130,7 @@
         const q = query(collection(this.db, "employees"), orderBy("name"));
         this.unsubs.employees?.();
         this.unsubs.employees = onSnapshot(q, (snap) => {
-          setter(snap.docs.map(d => d.data()));
+          setter(snap.docs.map(d => d.data()).filter(Boolean));
         });
         return this.unsubs.employees;
       }
@@ -607,7 +607,7 @@
           const changed = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
-            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            setEmployees(prev => ((prev || []).map(e => e.id === updated.id ? updated : e)).filter(Boolean));
             await dbApi.upsertEmployee(updated);
           }
         }
@@ -632,7 +632,7 @@
           setEditingEmployee(null);
           addNotification('Employee updated', 'success');
         } else {
-          const nextId = Math.max(0, ...employees.map(e => e.id||0)) + 1;
+          const nextId = Math.max(0, ...(employees || []).filter(Boolean).map(e => e.id||0)) + 1;
           const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color };
           await dbApi.upsertEmployee(newEmp);
           setShowEmployeeModal(false);
@@ -764,7 +764,7 @@
           const changed = employees.find(e => e.id === empId);
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + deltaHours };
-            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            setEmployees(prev => ((prev || []).map(e => e.id === updated.id ? updated : e)).filter(Boolean));
             await dbApi.upsertEmployee(updated);
           }
         }
@@ -1127,7 +1127,7 @@
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {employees.map(employee => {
+                  {(employees || []).filter(Boolean).map(employee => {
                     const usedThisYear = usedHoursThisYearFor(employee.id);
                     const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedThisYear);
                     const usagePercentage = (usedThisYear / (employee.totalLeave || 1)) * 100;
@@ -1285,7 +1285,7 @@
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select Employee</option>
-                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      {(employees || []).filter(Boolean).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                     </select>
                   </div>
 

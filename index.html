@@ -544,20 +544,7 @@
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
-      # We'll open the uploaded index.html, replace the saveQuickLeave function
-# with a version that creates separate daily documents for multi-day leave,
-# then save the updated file as /mnt/data/index.split-daily.html for the user to download.
-
-import re, json, os, textwrap, sys, pathlib
-
-src_path = "/mnt/data/index.html"
-out_path = "/mnt/data/index.split-daily.html"
-
-with open(src_path, "r", encoding="utf-8") as f:
-    html = f.read()
-
-# Define the new saveQuickLeave function
-new_func = r"""
+      
       const saveQuickLeave = async () => {
         // Validate
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
@@ -631,26 +618,21 @@ new_func = r"""
         // Close & notify
         setShowQuickLeaveModal(false);
         addNotification(isHours ? 'Leave (hours) added' : 'Leave (daily entries) added', 'success');
+      };setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
+        if (quickLeaveForm.type !== 'In Lieu') {
+          const changed = employees.find(e => e.id === newLeave.employeeId);
+          if (changed) {
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
+        }
+
+        await dbApi.createLeave(newLeave);
+        setShowQuickLeaveModal(false);
+        addNotification('Leave added', 'success');
       };
-""".rstrip("\n")
-
-# Replace the old function using a regex to find the entire function block.
-pattern = re.compile(r"""
-      const\ saveQuickLeave\ =\ async\ \(\)\ \=\>\ \{\s*    # function start
-      .*?                                                   # body (non-greedy)
-      \}\;\s*                                               # function end
-""", re.VERBOSE | re.DOTALL)
-
-new_html, nsubs = pattern.subn(new_func, html, count=1)
-
-if nsubs == 0:
-    # If not found, raise an error to let the user know.
-    raise RuntimeError("Couldn't locate saveQuickLeave function to replace.")
-
-with open(out_path, "w", encoding="utf-8") as f:
-    f.write(new_html)
-
-out_path
 
       const saveEmployee = async () => {
         if (!employeeForm.name.trim() || !employeeForm.department.trim()) { addNotification('Please fill in all required fields', 'error'); return; }
@@ -735,17 +717,79 @@ out_path
         });
       };
 
+      
       const saveEditedLeave = async () => {
         if (!editingLeave) return;
+
+        // Parse new duration
         const [unit, valueStr] = String(editLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
-        const start = nextWorkingDay(new Date(editLeaveForm.startDate));
-        const end = isHours ? new Date(start) : addWorkingDays(start, n);
-        const hours = isHours ? n : n*8;
 
-        const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
-        // optimistic update
+        // Start from next working day of selected start
+        const start = nextWorkingDay(new Date(editLeaveForm.startDate));
+
+        // Build target entries
+        const toCreate = [];
+        if (isHours) {
+          toCreate.push({
+            employeeId: parseInt(editLeaveForm.employeeId || editingLeave.employeeId),
+            startDate: new Date(start),
+            endDate: new Date(start),
+            type: editLeaveForm.type,
+            status: 'approved',
+            hours: n
+          });
+        } else {
+          let created = 0;
+          const d = new Date(start);
+          while (created < n) {
+            if (isWorkingDay(d)) {
+              toCreate.push({
+                employeeId: parseInt(editLeaveForm.employeeId || editingLeave.employeeId),
+                startDate: new Date(d),
+                endDate: new Date(d),
+                type: editLeaveForm.type,
+                status: 'approved',
+                hours: 8
+              });
+              created++;
+            }
+            d.setDate(d.getDate() + 1);
+          }
+        }
+
+        // Compute delta against original for used leave accounting
+        const oldHours = editingLeave.hours || 0;
+        const newTotalHours = toCreate.reduce((s, x) => s + (x.hours || 0), 0);
+        const deltaHours = (editLeaveForm.type === 'In Lieu' ? 0 : newTotalHours) - (editingLeave.type === 'In Lieu' ? 0 : oldHours);
+
+        // Optimistic UI: remove original, add new(s)
+        setLeaveRequests(prev => {
+          const filtered = prev.filter(l => l.id !== editingLeave.id);
+          const nowBase = Date.now();
+          const temps = toCreate.map((l, i) => ({ ...l, id: `tmp-edit-${nowBase}-${i}` }));
+          return [...filtered, ...temps];
+        });
+
+        // Update employee usedLeave if needed
+        if (deltaHours !== 0) {
+          const empId = parseInt(editLeaveForm.employeeId || editingLeave.employeeId);
+          const changed = employees.find(e => e.id === empId);
+          if (changed) {
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + deltaHours };
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
+        }
+
+        // Persist: delete original, then create new entries
+        await dbApi.deleteLeaveRequest(editingLeave.id);
+        await Promise.all(toCreate.map(l => dbApi.createLeave(l)));
+
+        addNotification('Leave updated', 'success');
+        setEditingLeave(null);
+      };// optimistic update
         setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
         await dbApi.updateLeave(editingLeave.id, patch);
         addNotification('Leave updated', 'success');

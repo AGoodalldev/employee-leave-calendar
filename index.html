@@ -124,7 +124,6 @@
         return v instanceof Date ? v : null;
       }
 
-      // ----- REALTIME SUBSCRIPTIONS -----
       subscribeEmployees(setter) {
         if (!this.db) return () => {};
         const { collection, query, orderBy, onSnapshot } = this.api;
@@ -136,7 +135,6 @@
         return this.unsubs.employees;
       }
 
-      // ensure every leave row has a usable id (doc id fallback)
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, onSnapshot } = this.api;
@@ -172,7 +170,6 @@
         return this.unsubs.shutdowns;
       }
 
-      // ----- LOCAL FALLBACK FETCHES -----
       async fetchEmployees() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_employees');
@@ -220,7 +217,6 @@
         });
       }
 
-      // ----- PER-DOC WRITES -----
       async upsertEmployee(emp) {
         if (!this.db) {
           const arr = await this.fetchEmployees();
@@ -256,7 +252,17 @@
       }
 
       async updateLeave(leaveId, partial) {
-        if (!this.db) return;
+        if (!this.db) {
+          // local fallback (best-effort)
+          const arr = await this.fetchLeaveRequests();
+          const i = arr.findIndex(r => r.id === leaveId);
+          if (i >= 0) {
+            const merged = { ...arr[i], ...partial };
+            arr[i] = merged;
+            localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:new Date(r.startDate).toISOString(), endDate:new Date(r.endDate).toISOString()}))));
+          }
+          return;
+        }
         const { doc, setDoc } = this.api;
         await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
       }
@@ -329,7 +335,13 @@
       // Shutdowns
       const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
       const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
-      const [editingShutdown, setEditingShutdown] = useState(null); // id when editing
+      const [editingShutdown, setEditingShutdown] = useState(null);
+
+      // Day Drawer + editing leave from expanded view
+      const [showDayDrawer, setShowDayDrawer] = useState(false);
+      const [drawerDate, setDrawerDate] = useState(null);
+      const [editingLeave, setEditingLeave] = useState(null);
+      const [editLeaveForm, setEditLeaveForm] = useState({ employeeId:"", type:"", duration:"", startDate:"" });
 
       const addNotification = useCallback((message, type='info') => {
         const id = Date.now();
@@ -395,7 +407,6 @@
         while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
         return d;
       };
-      // Start counts as day 1. Returns the last working day of the booking.
       const addWorkingDays = (start, days) => {
         let d = nextWorkingDay(start);
         if (days <= 1) return d;
@@ -416,6 +427,20 @@
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
+
+      // small/long labels for leave length
+      const lengthShort = (leave) => {
+        const h = leave.hours || 0;
+        if (h === 8) return 'day';
+        if (h % 8 === 0) return `${h/8}d`;
+        return `${h}h`;
+      };
+      const lengthLong = (leave) => {
+        const h = leave.hours || 0;
+        if (h === 8) return '1 day';
+        if (h % 8 === 0) return `${h/8} days`;
+        return `${h} hours`;
+      };
 
       const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
@@ -532,7 +557,6 @@
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
 
-        // ensure we start on a working day
         let start = nextWorkingDay(new Date(selectedDate));
         let end   = new Date(start);
 
@@ -550,13 +574,12 @@
           hours: totalHours
         };
 
-        // Optimistic UI
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
-            const updated = { ...changed, usedLeave: changed.usedLeave + totalHours };
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
@@ -634,6 +657,39 @@
         if (mode === 'week') setCurrentDate(new Date());
       };
 
+      // open/close day drawer
+      const openDayDrawer = (date) => { setDrawerDate(date); setShowDayDrawer(true); setEditingLeave(null); };
+      const closeDayDrawer = () => { setShowDayDrawer(false); setDrawerDate(null); setEditingLeave(null); };
+
+      // start editing a leave from drawer
+      const startEditLeave = (leave) => {
+        setEditingLeave(leave);
+        const dur = (leave.hours || 0) % 8 === 0 ? `D:${(leave.hours||0)/8}` : `H:${leave.hours||0}`;
+        setEditLeaveForm({
+          employeeId: String(leave.employeeId),
+          type: leave.type,
+          duration: dur,
+          startDate: new Date(leave.startDate).toISOString().slice(0,10)
+        });
+      };
+
+      const saveEditedLeave = async () => {
+        if (!editingLeave) return;
+        const [unit, valueStr] = String(editLeaveForm.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
+        const start = nextWorkingDay(new Date(editLeaveForm.startDate));
+        const end = isHours ? new Date(start) : addWorkingDays(start, n);
+        const hours = isHours ? n : n*8;
+
+        const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
+        // optimistic update
+        setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
+        await dbApi.updateLeave(editingLeave.id, patch);
+        addNotification('Leave updated', 'success');
+        setEditingLeave(null);
+      };
+
       if (isLoading) {
         return (
           <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -649,17 +705,16 @@
       const addEnabled = quickLeaveForm.employeeId && quickLeaveForm.duration && quickLeaveForm.type;
       const currentYear = new Date().getFullYear();
 
-      // compute "used hours this year" for a person
       const usedHoursThisYearFor = (empId) =>
         leaveRequests
           .filter(l => l.employeeId === empId && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === currentYear)
           .reduce((sum, l) => sum + (l.hours || 0), 0);
 
-      // find upcoming leave for a person (first by startDate >= today)
       const nextUpcomingFor = (empId) => {
         const today = new Date();
+        const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const sorted = leaveRequests
-          .filter(l => l.employeeId === empId && new Date(l.startDate) >= new Date(today.setHours(0,0,0,0)))
+          .filter(l => l.employeeId === empId && new Date(l.startDate) >= t0)
           .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
         return sorted[0] || null;
       };
@@ -711,7 +766,7 @@
 
           {/* Header */}
           <div className="bg-white shadow-sm border-b">
-            <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="max-w-7xl mx:auto md:mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <button onClick={() => setShowSidebar(true)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -805,9 +860,15 @@
                                  className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
                                    !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-red-50 border-red-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
                               <div className="flex justify-between items-start mb-1">
-                                <div className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}`}>
+                                {/* tap date number to expand */}
+                                <button
+                                  onClick={() => openDayDrawer(date)}
+                                  className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'} hover:underline cursor-pointer`}
+                                  title="Tap to expand day"
+                                >
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
-                                </div>
+                                </button>
+
                                 {isCurrentMonth && isWorkingDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
@@ -816,6 +877,7 @@
                                   }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
                                 )}
                               </div>
+
                               <div className="space-y-1">
                                 {dayLeaves.map(leave => {
                                   if (leave.isShutdown) {
@@ -828,17 +890,13 @@
                                   if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
-                                      <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70">• {lengthShort(leave)}</span></span>
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
-                                          if (leave.type !== 'In Lieu') {
-                                            const changed = employees.find(e => e.id === leave.employeeId);
-                                            if (changed) await dbApi.upsertEmployee({ ...changed, usedLeave: Math.max(0, (changed.usedLeave || 0) - (leave.hours || 0)) });
-                                          }
                                           addNotification('Leave removed', 'success');
                                         }
-                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded">
+                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
                                         <Icon name="x" className="h-2 w-2" />
                                       </button>
                                     </div>
@@ -983,9 +1041,9 @@
                     const usagePercentage = (usedThisYear / (employee.totalLeave || 1)) * 100;
                     const upcoming = nextUpcomingFor(employee.id);
                     const upcomingLenHours = upcoming ? (upcoming.hours || 0) : 0;
-                    const upcomingLenLabel = upcomingLenHours % 8 === 0
-                      ? `${upcomingLenHours/8}d`
-                      : `${upcomingLenHours}h`;
+                    const upcomingLenLabel = upcomingLenHours === 8
+                      ? '1 day'
+                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8} days` : `${upcomingLenHours} hours`);
 
                     return (
                       <div key={employee.id}
@@ -1189,6 +1247,139 @@
                       Add Leave
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Day Drawer (expanded day view for mobile) */}
+          {showDayDrawer && drawerDate && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={closeDayDrawer}></div>
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[80vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {drawerDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    {!isWorkingDay(drawerDate) && (
+                      <p className="text-sm text-gray-500">Non-working day</p>
+                    )}
+                  </div>
+                  <button onClick={closeDayDrawer} className="p-2 rounded hover:bg-gray-100">
+                    <Icon name="x" className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  <button
+                    onClick={() => { setSelectedDate(drawerDate); setQuickLeaveForm({ employeeId:"", duration:"", type:"" }); setShowQuickLeaveModal(true); }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    Add Leave
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {(() => {
+                    const items = getLeaveForDate(drawerDate);
+                    if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
+                    return items.map(item => {
+                      if (item.isShutdown) {
+                        return (
+                          <div key={item.id} className="p-3 rounded-lg bg-red-50 border border-red-100">
+                            <div className="text-red-800 font-medium">Workshop Closed</div>
+                            <div className="text-sm text-red-700">{item.name}</div>
+                          </div>
+                        );
+                      }
+                      if (item.isBankHoliday) {
+                        return (
+                          <div key={item.id} className="p-3 rounded-lg bg-purple-50 border border-purple-100">
+                            <div className="text-purple-800 font-medium">Bank Holiday</div>
+                            <div className="text-sm text-purple-700">{item.name}</div>
+                          </div>
+                        );
+                      }
+                      const emp = employees.find(e => e.id === item.employeeId);
+                      return (
+                        <div key={item.id} className="p-3 rounded-lg border border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
+                              <div className="text-sm text-gray-600">{item.type} • {lengthLong(item)}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                      onClick={() => startEditLeave(item)}>Edit</button>
+                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                      onClick={async () => {
+                                        if (confirm('Delete this leave?')) {
+                                          await dbApi.deleteLeaveRequest(item.id);
+                                          addNotification('Leave removed', 'success');
+                                        }
+                                      }}>Delete</button>
+                            </div>
+                          </div>
+
+                          {/* Inline editor inside the drawer */}
+                          {editingLeave?.id === item.id && (
+                            <div className="mt-3 border-t pt-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                                  <input type="date"
+                                         value={editLeaveForm.startDate}
+                                         onChange={(e) => setEditLeaveForm(p => ({...p, startDate: e.target.value}))}
+                                         className="w-full px-3 py-2 border rounded-md" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Type</label>
+                                  <select
+                                    value={editLeaveForm.type}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, type: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <option value="Annual Leave">Annual Leave</option>
+                                    <option value="In Lieu">In Lieu</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Duration</label>
+                                  <select
+                                    value={editLeaveForm.duration}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, duration: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <optgroup label="Hours">
+                                      <option value="H:1">1 Hour</option>
+                                      <option value="H:2">2 Hours</option>
+                                      <option value="H:3">3 Hours</option>
+                                      <option value="H:4">4 Hours</option>
+                                      <option value="H:5">5 Hours</option>
+                                      <option value="H:6">6 Hours</option>
+                                      <option value="H:7">7 Hours</option>
+                                    </optgroup>
+                                    <optgroup label="Days">
+                                      <option value="D:1">1 Day (8 hours)</option>
+                                      <option value="D:2">2 Days (16 hours)</option>
+                                      <option value="D:3">3 Days (24 hours)</option>
+                                      <option value="D:4">4 Days (32 hours)</option>
+                                      <option value="D:5">5 Days (40 hours)</option>
+                                    </optgroup>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-2 justify-end">
+                                <button className="px-3 py-2 rounded border" onClick={() => setEditingLeave(null)}>Cancel</button>
+                                <button className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={saveEditedLeave}>Save</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>

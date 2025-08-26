@@ -669,6 +669,42 @@
         await dbApi.deleteWorkshopShutdown(shutdownId);
         addNotification('Workshop shutdown deleted', 'success');
       };
+// Add / restore this in the ACTIONS section
+const saveWorkshopShutdown = async () => {
+  if (!shutdownForm.name.trim() || !shutdownForm.startDate || !shutdownForm.endDate) {
+    addNotification('Please fill in all required fields', 'error');
+    return;
+  }
+
+  const startDate = new Date(shutdownForm.startDate);
+  const endDate = new Date(shutdownForm.endDate);
+  if (endDate < startDate) {
+    addNotification('End date must be after start date', 'error');
+    return;
+  }
+
+  if (editingShutdown) {
+    await dbApi.updateShutdown(editingShutdown, {
+      name: shutdownForm.name,
+      startDate,
+      endDate,
+      description: shutdownForm.description
+    });
+    addNotification('Workshop shutdown updated', 'success');
+    setEditingShutdown(null);
+  } else {
+    const newS = {
+      name: shutdownForm.name,
+      startDate,
+      endDate,
+      description: shutdownForm.description
+    };
+    await dbApi.createShutdown(newS);
+    addNotification('Workshop shutdown added', 'success');
+  }
+
+  setShutdownForm({ name: '', startDate: '', endDate: '', description: '' });
+};
 
       const openEmployeeModal = (employee=null) => {
         if (employee) {

@@ -130,7 +130,7 @@
         const q = query(collection(this.db, "employees"), orderBy("name"));
         this.unsubs.employees?.();
         this.unsubs.employees = onSnapshot(q, (snap) => {
-          setter(snap.docs.map(d => d.data()).filter(Boolean));
+          setter(snap.docs.map(d => d.data()));
         });
         return this.unsubs.employees;
       }
@@ -544,9 +544,7 @@
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
-      
       const saveQuickLeave = async () => {
-        // Validate
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
           return;
@@ -555,70 +553,42 @@
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        // Parse duration
         const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
 
-        // Determine start day aligned to next working day from the selected date
         let start = nextWorkingDay(new Date(selectedDate));
+        let end   = new Date(start);
 
-        // Build 1 entry per working day (or a single hours entry)
-        const toCreate = [];
-        if (isHours) {
-          toCreate.push({
-            employeeId: parseInt(quickLeaveForm.employeeId),
-            startDate: new Date(start),
-            endDate: new Date(start),
-            type: quickLeaveForm.type,
-            status: 'approved',
-            hours: n
-          });
-        } else {
-          // days: generate n working-day entries, each 8 hours, skipping weekends/bank hols
-          let created = 0;
-          const d = new Date(start);
-          while (created < n) {
-            if (isWorkingDay(d)) {
-              toCreate.push({
-                employeeId: parseInt(quickLeaveForm.employeeId),
-                startDate: new Date(d),
-                endDate: new Date(d),
-                type: quickLeaveForm.type,
-                status: 'approved',
-                hours: 8
-              });
-              created++;
-            }
-            d.setDate(d.getDate() + 1);
-          }
+        if (!isHours) {
+          end = addWorkingDays(start, n);
         }
+        const totalHours = isHours ? n : n * 8;
 
-        // Optimistic UI: add temp items
-        const nowBase = Date.now();
-        setLeaveRequests(prev => [
-          ...prev,
-          ...toCreate.map((l, i) => ({ ...l, id: `tmp-${nowBase}-${i}` }))
-        ]);
+        const newLeave = {
+          employeeId: parseInt(quickLeaveForm.employeeId),
+          startDate: start,
+          endDate: end,
+          type: quickLeaveForm.type,
+          status: 'approved',
+          hours: totalHours
+        };
 
-        // Update employee used leave (except "In Lieu")
-        const totalHours = toCreate.reduce((sum, x) => sum + (x.hours || 0), 0);
+        setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
         if (quickLeaveForm.type !== 'In Lieu') {
-          const changed = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
+          const changed = employees.find(e => e.id === newLeave.employeeId);
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
-            setEmployees(prev => ((prev || []).map(e => e.id === updated.id ? updated : e)).filter(Boolean));
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
             await dbApi.upsertEmployee(updated);
           }
         }
 
-        // Persist
-        await Promise.all(toCreate.map(l => dbApi.createLeave(l)));
-
-        // Close & notify
+        await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
-        addNotification(isHours ? 'Leave (hours) added' : 'Leave (daily entries) added', 'success');
-      
+        addNotification('Leave added', 'success');
+      };
 
       const saveEmployee = async () => {
         if (!employeeForm.name.trim() || !employeeForm.department.trim()) { addNotification('Please fill in all required fields', 'error'); return; }
@@ -632,7 +602,7 @@
           setEditingEmployee(null);
           addNotification('Employee updated', 'success');
         } else {
-          const nextId = Math.max(0, ...(employees || []).filter(Boolean).map(e => e.id||0)) + 1;
+          const nextId = Math.max(0, ...employees.map(e => e.id||0)) + 1;
           const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color };
           await dbApi.upsertEmployee(newEmp);
           setShowEmployeeModal(false);
@@ -703,79 +673,17 @@
         });
       };
 
-      
       const saveEditedLeave = async () => {
         if (!editingLeave) return;
-
-        // Parse new duration
         const [unit, valueStr] = String(editLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
-
-        // Start from next working day of selected start
         const start = nextWorkingDay(new Date(editLeaveForm.startDate));
+        const end = isHours ? new Date(start) : addWorkingDays(start, n);
+        const hours = isHours ? n : n*8;
 
-        // Build target entries
-        const toCreate = [];
-        if (isHours) {
-          toCreate.push({
-            employeeId: parseInt(editLeaveForm.employeeId || editingLeave.employeeId),
-            startDate: new Date(start),
-            endDate: new Date(start),
-            type: editLeaveForm.type,
-            status: 'approved',
-            hours: n
-          });
-        } else {
-          let created = 0;
-          const d = new Date(start);
-          while (created < n) {
-            if (isWorkingDay(d)) {
-              toCreate.push({
-                employeeId: parseInt(editLeaveForm.employeeId || editingLeave.employeeId),
-                startDate: new Date(d),
-                endDate: new Date(d),
-                type: editLeaveForm.type,
-                status: 'approved',
-                hours: 8
-              });
-              created++;
-            }
-            d.setDate(d.getDate() + 1);
-          }
-        }
-
-        // Compute delta against original for used leave accounting
-        const oldHours = editingLeave.hours || 0;
-        const newTotalHours = toCreate.reduce((s, x) => s + (x.hours || 0), 0);
-        const deltaHours = (editLeaveForm.type === 'In Lieu' ? 0 : newTotalHours) - (editingLeave.type === 'In Lieu' ? 0 : oldHours);
-
-        // Optimistic UI: remove original, add new(s)
-        setLeaveRequests(prev => {
-          const filtered = prev.filter(l => l.id !== editingLeave.id);
-          const nowBase = Date.now();
-          const temps = toCreate.map((l, i) => ({ ...l, id: `tmp-edit-${nowBase}-${i}` }));
-          return [...filtered, ...temps];
-        });
-
-        // Update employee usedLeave if needed
-        if (deltaHours !== 0) {
-          const empId = parseInt(editLeaveForm.employeeId || editingLeave.employeeId);
-          const changed = employees.find(e => e.id === empId);
-          if (changed) {
-            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + deltaHours };
-            setEmployees(prev => ((prev || []).map(e => e.id === updated.id ? updated : e)).filter(Boolean));
-            await dbApi.upsertEmployee(updated);
-          }
-        }
-
-        // Persist: delete original, then create new entries
-        await dbApi.deleteLeaveRequest(editingLeave.id);
-        await Promise.all(toCreate.map(l => dbApi.createLeave(l)));
-
-        addNotification('Leave updated', 'success');
-        setEditingLeave(null);
-      };// optimistic update
+        const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
+        // optimistic update
         setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
         await dbApi.updateLeave(editingLeave.id, patch);
         addNotification('Leave updated', 'success');
@@ -1127,7 +1035,7 @@
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {(employees || []).filter(Boolean).map(employee => {
+                  {employees.map(employee => {
                     const usedThisYear = usedHoursThisYearFor(employee.id);
                     const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedThisYear);
                     const usagePercentage = (usedThisYear / (employee.totalLeave || 1)) * 100;
@@ -1285,7 +1193,7 @@
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select Employee</option>
-                      {(employees || []).filter(Boolean).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                     </select>
                   </div>
 

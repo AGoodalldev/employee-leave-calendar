@@ -545,7 +545,7 @@
 
       // ---------- ACTIONS ----------
       
-      const saveQuickLeave = async () => {
+            const saveQuickLeave = async () => {
         // Validate
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
@@ -575,7 +575,6 @@
             hours: n
           });
         } else {
-          // days: generate n working-day entries, each 8 hours, skipping weekends/bank hols
           let created = 0;
           const d = new Date(start);
           while (created < n) {
@@ -594,7 +593,7 @@
           }
         }
 
-        // Optimistic UI: add temp items
+        // Optimistic UI
         const nowBase = Date.now();
         setLeaveRequests(prev => [
           ...prev,
@@ -618,7 +617,7 @@
         // Close & notify
         setShowQuickLeaveModal(false);
         addNotification(isHours ? 'Leave (hours) added' : 'Leave (daily entries) added', 'success');
-      };setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+      };
 
         if (quickLeaveForm.type !== 'In Lieu') {
           const changed = employees.find(e => e.id === newLeave.employeeId);

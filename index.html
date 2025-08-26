@@ -544,8 +544,7 @@
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
-            const saveQuickLeave = async () => {
-        // Validate
+      const saveQuickLeave = async () => {
         if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
           addNotification('Please complete all fields', 'error');
           return;
@@ -554,70 +553,26 @@
         const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
         if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        // Parse duration
         const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
         const isHours = unit === 'H';
 
-        // Determine start day aligned to next working day from the selected date
         let start = nextWorkingDay(new Date(selectedDate));
+        let end   = new Date(start);
 
-        // Build 1 entry per working day (or a single hours entry)
-        const toCreate = [];
-        if (isHours) {
-          toCreate.push({
-            employeeId: parseInt(quickLeaveForm.employeeId),
-            startDate: new Date(start),
-            endDate: new Date(start),
-            type: quickLeaveForm.type,
-            status: 'approved',
-            hours: n
-          });
-        } else {
-          // days: generate n working-day entries, each 8 hours, skipping weekends/bank hols
-          let created = 0;
-          const d = new Date(start);
-          while (created < n) {
-            if (isWorkingDay(d)) {
-              toCreate.push({
-                employeeId: parseInt(quickLeaveForm.employeeId),
-                startDate: new Date(d),
-                endDate: new Date(d),
-                type: quickLeaveForm.type,
-                status: 'approved',
-                hours: 8
-              });
-              created++;
-            }
-            d.setDate(d.getDate() + 1);
-          }
+        if (!isHours) {
+          end = addWorkingDays(start, n);
         }
+        const totalHours = isHours ? n : n * 8;
 
-        // Optimistic UI: add temp items
-        const nowBase = Date.now();
-        setLeaveRequests(prev => [
-          ...(prev || []),
-          ...toCreate.map((l, i) => ({ ...l, id: `tmp-${nowBase}-${i}` }))
-        ]);
-
-        // Update employee used leave (except "In Lieu")
-        const totalHours = toCreate.reduce((sum, x) => sum + (x.hours || 0), 0);
-        if (quickLeaveForm.type !== 'In Lieu') {
-          const changed = employees.find(e => e.id === parseInt(quickLeaveForm.employeeId));
-          if (changed) {
-            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
-            setEmployees(prev => (prev || []).map(e => e.id === updated.id ? updated : e));
-            await dbApi.upsertEmployee(updated);
-          }
-        }
-
-        // Persist
-        await Promise.all(toCreate.map(l => dbApi.createLeave(l)));
-
-        // Close & notify
-        setShowQuickLeaveModal(false);
-        addNotification(isHours ? 'Leave (hours) added' : 'Leave (daily entries) added', 'success');
-      };
+        const newLeave = {
+          employeeId: parseInt(quickLeaveForm.employeeId),
+          startDate: start,
+          endDate: end,
+          type: quickLeaveForm.type,
+          status: 'approved',
+          hours: totalHours
+        };
 
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 

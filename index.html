@@ -1,5 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lan
+      // --- booking constraints ---
+      const isShutdownDate = (date) => {
+        const d = new Date(date);
+        return workshopShutdowns.some(s => d >= new Date(s.startDate) && d <= new Date(s.endDate));
+      };
+      const isBookableDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date) && !isShutdownDate(date);
+g="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>

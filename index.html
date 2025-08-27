@@ -954,7 +954,7 @@ return (
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </button>
 
-                                {isCurrentMonth && isBookableDay(date) && (}
+                                {isCurrentMonth && isBookableDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
                                     setQuickLeaveForm({ employeeId:"", duration:"", type:"" });

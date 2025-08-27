@@ -765,6 +765,36 @@ const saveEditedLeave = async () => {
         return total;
       };
 
+      const nextUpcomingFor = (empId) => {
+        const today = new Date();
+        const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        // Scan all leaves for this employee that intersect any future date
+        const candidates = leaveRequests
+          .filter(l => l.employeeId === empId && new Date(l.endDate) >= t0)  // include blocks that started earlier but still ongoing
+          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+
+        for (const l of candidates) {
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+          // If it's an hours-only entry (< 8h) and it's today or later, return it as-is
+          if ((l.hours || 0) > 0 && (l.hours || 0) < 8) {
+            if (s >= t0) return l;
+            continue;
+          }
+          // Walk the date range to find the first *working* day not excluded, that is >= today
+          const from = s < t0 ? t0 : s;
+          for (let d = new Date(from); d <= e; d.setDate(d.getDate() + 1)) {
+            const day = new Date(d);
+            if (isWorkingDay(day) && !isExcluded(l, day)) {
+              // Return a shallow clone whose startDate is the actual next visible day
+              return { ...l, startDate: day };
+            }
+          }
+        }
+        return null;
+      };
+
+
 
       return (
         <div className="min-h-screen bg-gray-50">

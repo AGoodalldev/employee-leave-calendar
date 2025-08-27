@@ -431,7 +431,11 @@
       // small/long labels for leave length
       
       // Calculate dynamic hours for a leave, respecting exclusions and working days
-      const effectiveHours = (leave) => {
+      
+      // Added helpers for exclusions
+      const isoDate = (d) => new Date(d).toISOString().slice(0,10);
+      const isExcluded = (leave, date) => Array.isArray(leave.excludedDates) && leave.excludedDates.includes(isoDate(date));
+const effectiveHours = (leave) => {
         const h = leave.hours || 0;
         if (h > 0 && h < 8) return h;
         const s = new Date(leave.startDate);

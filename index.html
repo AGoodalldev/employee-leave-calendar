@@ -402,9 +402,16 @@
         getBankHolidays(date.getFullYear()).some(h => isSameDay(h.date, date));
       const isWeekendDay = (date) => date.getDay() === 0 || date.getDay() === 6;
       const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
+      // Days you can actually book: working day and not during a workshop shutdown
+      const isShutdownDate = (date) => {
+        const d = new Date(date);
+        return workshopShutdowns.some(s => d >= new Date(s.startDate) && d <= new Date(s.endDate));
+      };
+      const isBookableDay = (date) => isWorkingDay(date) && !isShutdownDate(date);
+
       const nextWorkingDay = (date) => {
         const d = new Date(date);
-        while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
+        while (!isBookableDay(d)) d.setDate(d.getDate() + 1);
         return d;
       };
       const addWorkingDays = (start, days) => {
@@ -413,7 +420,7 @@
         let remaining = days - 1;
         while (remaining > 0) {
           d.setDate(d.getDate() + 1);
-          if (isWorkingDay(d)) remaining--;
+          if (isBookableDay(d)) remaining--;
         }
         return d;
       };

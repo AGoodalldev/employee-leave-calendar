@@ -843,16 +843,27 @@ const saveEditedLeave = async () => {
                   {viewMode === 'year' ? (
                     <div className={`grid ${getGridColumns()} gap-4`}>
                       {getCalendarDays().map((month, idx) => {
-                        const monthLeaves = leaveRequests.filter(leave => {
-                          const s = new Date(leave.startDate);
-                          return s.getMonth() === month.getMonth() && s.getFullYear() === month.getFullYear();
-                        });
+                                                // Count effective working days in this month per employee (respects exclusions & cross-month spans)
+                        const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+                        const monthEnd   = new Date(month.getFullYear(), month.getMonth()+1, 0);
                         const map = new Map();
-                        monthLeaves.forEach(leave => {
-                          const id = leave.employeeId;
-                          if (map.has(id)) map.get(id).totalDays += (leave.hours/8);
-                          else map.set(id, { employeeId:id, status: leave.status, totalDays:(leave.hours/8) });
+
+                        leaveRequests.forEach(leave => {
+                          const s = new Date(leave.startDate);
+                          const e = new Date(leave.endDate);
+                          if (e < monthStart || s > monthEnd) return; // no overlap
+                          const from = new Date(Math.max(monthStart, s));
+                          const to   = new Date(Math.min(monthEnd, e));
+                          for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+                            const day = new Date(d);
+                            if (isWorkingDay(day) && !isExcluded(leave, day)) {
+                              const id = leave.employeeId;
+                              if (map.has(id)) map.get(id).totalDays += 1;
+                              else map.set(id, { employeeId: id, status: leave.status, totalDays: 1 });
+                            }
+                          }
                         });
+
                         const unique = Array.from(map.values());
                         return (
                           <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"

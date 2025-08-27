@@ -924,7 +924,7 @@ const saveEditedLeave = async () => {
                                   if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
-                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70">• {lengthShort(leave)}</span></span>
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
                                       <button onClick={() => excludeSingleDay(leave, date)} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
                                         <Icon name="x" className="h-2 w-2" />
                                       </button>
@@ -1071,8 +1071,8 @@ const saveEditedLeave = async () => {
                     const upcoming = nextUpcomingFor(employee.id);
                     const upcomingLenHours = upcoming ? (upcoming.hours || 0) : 0;
                     const upcomingLenLabel = upcomingLenHours === 8
-                      ? '1 day'
-                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8} days` : `${upcomingLenHours} hours`);
+  ? '1d'
+  : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8}d` : `${upcomingLenHours}h`);
 
                     return (
                       <div key={employee.id}

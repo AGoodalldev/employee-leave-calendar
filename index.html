@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Atkin Guitars Leave Calendar</title>
+
+  <!-- prevent favicon 404 noise -->
+  <link rel="icon" href="data:,">
+
+  <!-- React / Tailwind / Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .connection-indicator { position: fixed; top: 20px; right: 20px; z-index: 1000; padding: 8px 16px; border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 8px; transition: opacity 0.3s; }
+    .connection-indicator.hide { opacity: 0; transform: translateX(100%); }
+    .connected { background-color: #10B981; color: white; }
+    .disconnected { background-color: #EF4444; color: white; }
+    .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); transition: transform 0.3s; z-index: 1000; }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; visibility: hidden; transition: all 0.3s; }
+    .sidebar-overlay.show { opacity: 1; visibility: visible; }
+    .notification { position: fixed; top: 80px; right: 20px; z-index: 1000; padding: 12px 16px; border-radius: 8px; color: white; transform: translateX(100%); transition: transform 0.3s; }
+    .notification.show { transform: translateX(0); }
+    .notification.success { background-color: #10B981; }
+    .notification.error { background-color: #EF4444; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Firebase v12 ESM init with auth + realtime exposure -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+    import {
+      getFirestore, enableIndexedDbPersistence,
+      collection, doc, getDocs, getDoc, setDoc, deleteDoc,
+      writeBatch, query, orderBy, Timestamp, onSnapshot
+    } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD8zcVQBrK_Q_WQZKa856u2ka901eakX0A",
+      authDomain: "atkin-guitars-94dd8.firebaseapp.com",
+      projectId: "atkin-guitars-94dd8",
+      storageBucket: "atkin-guitars-94dd8.appspot.com",
+      messagingSenderId: "501290829079",
+      appId: "1:501290829079:web:e6d21711bccb47654ae352"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Offline-first cache
+    enableIndexedDbPersistence(db).catch(() => {});
+
+    // Wait for anonymous auth
+    const ready = new Promise((resolve) => {
+      let resolved = false;
+      onAuthStateChanged(auth, (user) => {
+        if (user && !resolved) { resolved = true; resolve(user); }
+      });
+      signInAnonymously(auth).catch((err) => {
+        console.error("Anon sign-in failed:", err);
+        if (!resolved) resolve(null); // allow local fallback
+      });
+    });
+
+    // Expose to the Babel script
+    window.__fb = {
+      app, auth, db, ready,
+      api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, orderBy, Timestamp, onSnapshot }
+    };
+  </script>
+
+  <!-- App code -->
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // Icon component
+    const Icon = ({ name, className }) => {
+      const paths = {
+        calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+        menu: "M4 6h16M4 12h16M4 18h16",
+        users: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
+        userAdd: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
+        edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+        trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+        x: "M6 18L18 6M6 6l12 12",
+        wifi: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0",
+        wifiOff: "M18.364 5.636l-12.728 12.728m0 0L1.394 14.122m4.242 4.242a5.5 5.5 0 007.778 0m7.778-7.778a10.97 10.97 0 00-3.536-2.464m-6.242 6.242L7.758 8.879m0 0a10.97 10.97 0 00-3.536 2.464",
+        chevronLeft: "M15 19l-7-7 7-7",
+        userGroup: "M17 20h5v-2a3 3 0 00-5.196-2.12M12 14a3 3 0 100-6 3 3 0 000 6zM7 20h10v-2a4 4 0 00-8 0v2z",
+        home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+        settings: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94 1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+        factory: "M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V9.375c0-.621.504-1.125 1.125-1.125H20.25M8.25 21H3.75m0 0V9.375c0-.621.504-1.125 1.125-1.125H6.75m1.5 0V5.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125 1.125 1.125 1.125v3.75M6 21V9a1 1 0 011-1h1m0 0h4m0 0h1v4M6 15h2m-2 3h2m5-9v9"
+      };
+      return (
+        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
+        </svg>
+      );
+    };
+
+    // ---------- Firestore-backed Database API ----------
+    class DatabaseAPI {
+      constructor(addNotificationCb) {
+        this.addNotification = addNotificationCb || (() => {});
+        this.fb = window.__fb || {};
+        this.db = this.fb.db;
+        this.api = this.fb.api || {};
+        this.unsubs = { employees: null, leaves: null, shutdowns: null };
+      }
+
+      _tsToDate(v) {
+        if (!v) return null;
+        if (v && typeof v.toDate === "function") return v.toDate();
+        if (typeof v === "string") return new Date(v);
+        return v instanceof Date ? v : null;
+      }
+
+      subscribeEmployees(setter) {
+        if (!this.db) return () => {};
+        const { collection, query, orderBy, onSnapshot } = this.api;
+        const q = query(collection(this.db, "employees"), orderBy("name"));
+        this.unsubs.employees?.();
+        this.unsubs.employees = onSnapshot(q, (snap) => {
+          setter(snap.docs.map(d => d.data()));
+        });
+        return this.unsubs.employees;
+      }
+
+      subscribeLeaveRequests(setter) {
+        if (!this.db) return () => {};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "leave_requests");
+        this.unsubs.leaves?.();
+        this.unsubs.leaves = onSnapshot(ref, (snap) => {
+          const rows = snap.docs.map(d => {
+            const v = d.data();
+            return {
+              id: v.id ?? d.id,
+              ...v,
+              startDate: this._tsToDate(v.startDate),
+              endDate: this._tsToDate(v.endDate)
+            };
+          });
+          setter(rows);
+        });
+        return this.unsubs.leaves;
+      }
+
+      subscribeWorkshopShutdowns(setter) {
+        if (!this.db) return () => {};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "workshop_shutdowns");
+        this.unsubs.shutdowns?.();
+        this.unsubs.shutdowns = onSnapshot(ref, (snap) => {
+          const rows = snap.docs.map(d => {
+            const v = d.data();
+            return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+          });
+          setter(rows);
+        });
+        return this.unsubs.shutdowns;
+      }
+
+      async fetchEmployees() {
+        if (!this.db) {
+          const stored = localStorage.getItem('atkin_employees');
+          return stored ? JSON.parse(stored) : [
+            { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
+            { id: 2, name: 'Michael Chen', department: 'Finishing', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
+            { id: 3, name: 'Emma Davis', department: 'Administration', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
+          ];
+        }
+        const { collection, getDocs, query, orderBy } = this.api;
+        const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
+        return snap.docs.map(d => d.data());
+      }
+
+      async fetchLeaveRequests() {
+        if (!this.db) {
+          const stored = localStorage.getItem('atkin_leave_requests');
+          if (stored) return JSON.parse(stored).map(r => ({...r, startDate:new Date(r.startDate), endDate:new Date(r.endDate)}));
+          return [{ id: 1, employeeId: 1, startDate: new Date(2025,7,25), endDate: new Date(2025,7,29), type: 'Annual Leave', status: 'approved', hours: 40 }];
+        }
+        const { collection, getDocs } = this.api;
+        const snap = await getDocs(collection(this.db, "leave_requests"));
+        return snap.docs.map(d => {
+          const v = d.data();
+          return {
+            id: v.id ?? d.id,
+            ...v,
+            startDate: this._tsToDate(v.startDate),
+            endDate: this._tsToDate(v.endDate)
+          };
+        });
+      }
+
+      async fetchWorkshopShutdowns() {
+        if (!this.db) {
+          const stored = localStorage.getItem('atkin_workshop_shutdowns');
+          if (stored) return JSON.parse(stored).map(s => ({...s, startDate:new Date(s.startDate), endDate:new Date(s.endDate)}));
+          return [];
+        }
+        const { collection, getDocs } = this.api;
+        const snap = await getDocs(collection(this.db, "workshop_shutdowns"));
+        return snap.docs.map(d => {
+          const v = d.data();
+          return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+        });
+      }
+
+      async upsertEmployee(emp) {
+        if (!this.db) {
+          const arr = await this.fetchEmployees();
+          const i = arr.findIndex(e => e.id === emp.id);
+          if (i >= 0) arr[i] = emp; else arr.push(emp);
+          localStorage.setItem('atkin_employees', JSON.stringify(arr));
+          return;
+        }
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
+      }
+
+      async deleteEmployee(id) {
+        if (!this.db) {
+          const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
+          localStorage.setItem('atkin_employees', JSON.stringify(arr));
+          return;
+        }
+        const { doc, deleteDoc } = this.api;
+        await deleteDoc(doc(this.db, "employees", String(id)));
+      }
+
+      async createLeave(leave) {
+        if (!this.db) {
+          const arr = await this.fetchLeaveRequests();
+          arr.push({ ...leave, id: `local-${Date.now()}` });
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+          return;
+        }
+        const { collection, doc, setDoc } = this.api;
+        const ref = doc(collection(this.db, "leave_requests"));
+        await setDoc(ref, { ...leave, id: ref.id });
+      }
+
+      async updateLeave(leaveId, partial) {
+        if (!this.db) {
+          // local fallback (best-effort)
+          const arr = await this.fetchLeaveRequests();
+          const i = arr.findIndex(r => r.id === leaveId);
+          if (i >= 0) {
+            const merged = { ...arr[i], ...partial };
+            arr[i] = merged;
+            localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:new Date(r.startDate).toISOString(), endDate:new Date(r.endDate).toISOString()}))));
+          }
+          return;
+        }
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
+      }
+
+      async deleteLeaveRequest(id) {
+        if (!id) { console.warn("deleteLeaveRequest called without id"); return; }
+        if (!this.db) {
+          const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+          return;
+        }
+        const { doc, deleteDoc } = this.api;
+        await deleteDoc(doc(this.db, "leave_requests", String(id)));
+      }
+
+      async createShutdown(s) {
+        if (!this.db) {
+          const arr = await this.fetchWorkshopShutdowns();
+          arr.push({ ...s, id: `local-${Date.now()}` });
+          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+          return;
+        }
+        const { collection, doc, setDoc } = this.api;
+        const ref = doc(collection(this.db, "workshop_shutdowns"));
+        await setDoc(ref, { ...s, id: ref.id });
+      }
+
+      async updateShutdown(id, partial) {
+        if (!this.db) {
+          const arr = await this.fetchWorkshopShutdowns();
+          const i = arr.findIndex(x => x.id === id);
+          if (i >= 0) {
+            arr[i] = { ...arr[i], ...partial };
+            localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:new Date(x.startDate).toISOString(), endDate:new Date(x.endDate).toISOString()}))));
+          }
+          return;
+        }
+        const { doc, setDoc } = this.api;
+        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), partial, { merge: true });
+      }
+
+      async deleteWorkshopShutdown(id) {
+        if (!this.db) {
+          const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
+          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+          return;
+        }
+        const { doc, deleteDoc } = this.api;
+        await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
+      }
+    }
+
+    const LeaveCalendar = () => {
+      // State
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [viewMode, setViewMode] = useState('month');
+      const [showQuickLeaveModal, setShowQuickLeaveModal] = useState(false);
+      const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [editingEmployee, setEditingEmployee] = useState(null);
+      const [connectionStatus, setConnectionStatus] = useState('connected');
+      const [showConnectionIndicator, setShowConnectionIndicator] = useState(true);
+      const [notifications, setNotifications] = useState([]);
+      const [employees, setEmployees] = useState([]);
+      const [leaveRequests, setLeaveRequests] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const [showSidebar, setShowSidebar] = useState(false);
+      const [currentView, setCurrentView] = useState('calendar');
+
+      // Shutdowns
+      const [workshopShutdowns, setWorkshopShutdowns] = useState([]);
+      const [shutdownForm, setShutdownForm] = useState({ name: '', startDate: '', endDate: '', description: '' });
+      const [editingShutdown, setEditingShutdown] = useState(null);
+
+      // Day Drawer + editing leave from expanded view
+      const [showDayDrawer, setShowDayDrawer] = useState(false);
+      const [drawerDate, setDrawerDate] = useState(null);
+      const [editingLeave, setEditingLeave] = useState(null);
+      const [editLeaveForm, setEditLeaveForm] = useState({ employeeId:"", type:"", duration:"", startDate:"" });
+
+      const addNotification = useCallback((message, type='info') => {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message, type, show:false }]);
+        setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show:true } : n)), 100);
+        setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
+      }, []);
+
+      const [dbApi] = useState(() => new DatabaseAPI(addNotification));
+
+      // Online/offline indicator
+      useEffect(() => {
+        const onOnline = () => setConnectionStatus('connected');
+        const onOffline = () => setConnectionStatus('disconnected');
+        window.addEventListener('online', onOnline);
+        window.addEventListener('offline', onOffline);
+        return () => {
+          window.removeEventListener('online', onOnline);
+          window.removeEventListener('offline', onOffline);
+        };
+      }, []);
+
+      // Bank holidays helpers
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const getEasterDate = (year) => {
+        const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=Math.floor((h+l-7*m+114)/31),p=(h+l-7*m+114)%31;
+        return new Date(year,n-1,p+1);
+      };
+      const getFirstMondayOfMonth = (year, month) => {
+        const firstDay=new Date(year,month,1), dow=firstDay.getDay(), daysUntilMonday=dow===0?1:8-dow;
+        return new Date(year,month,1+daysUntilMonday);
+      };
+      const getLastMondayOfMonth = (year, month) => {
+        const lastDay=new Date(year,month+1,0), dow=lastDay.getDay(), sub=dow===1?0:dow===0?6:dow-1;
+        return new Date(year,month,lastDay.getDate()-sub);
+      };
+      const getBankHolidays = (year) => {
+        const hs = [];
+        hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+        const easter = getEasterDate(year);
+        const gf = new Date(easter);
+        const em = new Date(easter);
+        gf.setDate(easter.getDate() - 2);
+        em.setDate(easter.getDate() + 1);
+        hs.push({ name: "Good Friday", date: gf });
+        hs.push({ name: "Easter Monday", date: em });
+        hs.push({ name: "Early May Bank Holiday", date: getFirstMondayOfMonth(year, 4) });
+        hs.push({ name: "Spring Bank Holiday", date: getLastMondayOfMonth(year, 4) });
+        hs.push({ name: "Summer Bank Holiday", date: getLastMondayOfMonth(year, 7) });
+        hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+        hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+        return hs;
+      };
+
+      // ---- working-day helpers (weekends + bank holidays) ----
+      const isSameDay = (a, b) => a.toDateString() === b.toDateString();
+      const isBankHolidayDate = (date) =>
+        getBankHolidays(date.getFullYear()).some(h => isSameDay(h.date, date));
+      const isWeekendDay = (date) => date.getDay() === 0 || date.getDay() === 6;
+      const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
+      const nextWorkingDay = (date) => {
+        const d = new Date(date);
+        while (!isBookableDay(d)) d.setDate(d.getDate() + 1);
+        return d;
+      };
+      // --- booking constraints ---
+      const isShutdownDate = (date) => {
+        const d = new Date(date);
+        return workshopShutdowns.some(s => d >= new Date(s.startDate) && d <= new Date(s.endDate));
+      };
+      const isBookableDay = (date) => (!isWeekendDay(date) && !isBankHolidayDate(date)) && !isShutdownDate(date);
+
+      const addWorkingDays = (start, days) => {
+        let d = nextWorkingDay(start);
+        if (days <= 1) return d;
+        let remaining = days - 1;
+        while (remaining > 0) {
+          d.setDate(d.getDate() + 1);
+          if (isBookableDay(d)) remaining--;
+        }
+        return d;
+      };
+
+      // Quick leave form with placeholders
+      const [quickLeaveForm, setQuickLeaveForm] = useState({
+        employeeId: "",
+        duration: "", // "D:n" or "H:n"
+        type: ""
+      });
+
+      const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
+      const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
+
+      // small/long labels for leave length
+      const lengthShort = (leave) => {
+        const h = leave.hours || 0;
+        if (h === 8) return 'day';
+        if (h % 8 === 0) return `${h/8}d`;
+        return `${h}h`;
+      };
+      const lengthLong = (leave) => {
+        const h = leave.hours || 0;
+        if (h === 8) return '1 day';
+        if (h % 8 === 0) return `${h/8} days`;
+        return `${h} hours`;
+      };
+
+      const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
+      const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
+
+      const getMonthDays = () => {
+        const y=currentDate.getFullYear(), m=currentDate.getMonth();
+        const first=new Date(y,m,1); const start=new Date(first); start.setDate(start.getDate()-first.getDay());
+        return Array.from({length:42},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
+      };
+      const getWeekDays = () => {
+        const start=new Date(currentDate); const day=start.getDay(); start.setDate(currentDate.getDate()-day);
+        return Array.from({length:7},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
+      };
+      const getYearMonths = () => Array.from({length:12},(_,i)=>new Date(currentDate.getFullYear(), i, 1));
+      const getCalendarDays = () => viewMode==='week'?getWeekDays():(viewMode==='year'?getYearMonths():getMonthDays());
+      const navigateCalendar = (dir) => setCurrentDate(prev => {
+        const nd=new Date(prev);
+        if (viewMode==='week') nd.setDate(prev.getDate()+dir*7);
+        else if (viewMode==='year') nd.setFullYear(prev.getFullYear()+dir);
+        else nd.setMonth(prev.getMonth()+dir);
+        return nd;
+      });
+      const getViewTitle = () => {
+        if (viewMode==='week') {
+          const s=new Date(currentDate); const day=s.getDay(); s.setDate(currentDate.getDate()-day);
+          const e=new Date(s); e.setDate(s.getDate()+6);
+          return (s.getMonth()===e.getMonth())
+            ? `${monthNames[s.getMonth()]} ${s.getDate()}-${e.getDate()}, ${s.getFullYear()}`
+            : `${monthNames[s.getMonth()]} ${s.getDate()} - ${monthNames[e.getMonth()]} ${e.getDate()}, ${s.getFullYear()}`;
+        }
+        if (viewMode==='year') return String(currentDate.getFullYear());
+        return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+      };
+      const getGridColumns = () => viewMode==='year' ? 'grid-cols-4' : 'grid-cols-7';
+
+      const getStatusColor = (status) => {
+        switch(status){
+          case 'approved': return 'bg-green-100 text-green-800';
+          case 'pending': return 'bg-yellow-100 text-yellow-800';
+          case 'shutdown': return 'bg-red-100 text-red-800';
+          case 'bankholiday': return 'bg-purple-100 text-purple-800';
+          default: return 'bg-gray-100 text-gray-800';
+        }
+      };
+
+      // Only show leave on working days; include shutdowns & bank holidays separately
+      const getLeaveForDate = (date) => {
+        const regs = leaveRequests.filter(l => {
+          const s = new Date(l.startDate), e = new Date(l.endDate);
+          return date >= s && date <= e && isWorkingDay(date);
+        });
+
+        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
+        const res = [...regs];
+
+        shut.forEach(s => res.push({
+          id: `shutdown-${s.id}`,
+          type: 'Workshop Shutdown',
+          status: 'shutdown',
+          isShutdown: true,
+          name: s.name
+        }));
+
+        if (!isWorkingDay(date) && isBankHolidayDate(date)) {
+          const bh = getBankHolidays(date.getFullYear()).find(h => isSameDay(h.date, date));
+          res.push({
+            id: `bankholiday-${bh.name.replace(/\s+/g,'-')}`,
+            type: 'Bank Holiday',
+            status: 'bankholiday',
+            isBankHoliday: true,
+            name: bh.name
+          });
+        }
+
+        return res;
+      };
+
+      // ---------- INITIALISE ----------
+      useEffect(() => {
+        let unsubEmp = null, unsubLeave = null, unsubShut = null;
+
+        const init = async () => {
+          if (window.__fb?.ready) { await window.__fb.ready; }
+          if (window.__fb?.db) {
+            unsubEmp  = dbApi.subscribeEmployees(setEmployees);
+            unsubLeave = dbApi.subscribeLeaveRequests(setLeaveRequests);
+            unsubShut = dbApi.subscribeWorkshopShutdowns(setWorkshopShutdowns);
+          } else {
+            const [e,l,s] = await Promise.all([
+              dbApi.fetchEmployees(), dbApi.fetchLeaveRequests(), dbApi.fetchWorkshopShutdowns()
+            ]);
+            setEmployees(e); setLeaveRequests(l); setWorkshopShutdowns(s);
+            addNotification('Running in local (offline) mode.', 'error');
+          }
+          setIsLoading(false);
+          setTimeout(() => setShowConnectionIndicator(false), 3000);
+        };
+
+        init();
+        return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
+      }, [dbApi]);
+
+      // ---------- ACTIONS ----------
+      const saveQuickLeave = async () => {
+        if (!isBookableDay(selectedDate)) {
+          addNotification('You can only book leave on working days (no weekends, bank holidays or shutdowns).', 'error');
+          return;
+        }
+
+        if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
+          addNotification('Please complete all fields', 'error');
+          return;
+        }
+
+        const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
+        if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
+
+        const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
+
+        let start = nextWorkingDay(new Date(selectedDate));
+        let end   = new Date(start);
+
+        if (!isHours) {
+          end = addWorkingDays(start, n);
+        }
+        const totalHours = isHours ? n : n * 8;
+
+        const newLeave = {
+          employeeId: parseInt(quickLeaveForm.employeeId),
+          startDate: start,
+          endDate: end,
+          type: quickLeaveForm.type,
+          status: 'approved',
+          hours: totalHours
+        };
+
+        setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+
+        if (quickLeaveForm.type !== 'In Lieu') {
+          const changed = employees.find(e => e.id === newLeave.employeeId);
+          if (changed) {
+            const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
+            setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
+        }
+
+        await dbApi.createLeave(newLeave);
+        setShowQuickLeaveModal(false);
+        addNotification('Leave added', 'success');
+      };
+
+      const saveEmployee = async () => {
+        if (!employeeForm.name.trim() || !employeeForm.department.trim()) { addNotification('Please fill in all required fields', 'error'); return; }
+        const totalLeave = parseInt(employeeForm.totalLeave) || 0;
+        const usedLeave = parseInt(employeeForm.usedLeave) || 0;
+
+        if (editingEmployee) {
+          const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
+          await dbApi.upsertEmployee(updated);
+          setShowEmployeeModal(false);
+          setEditingEmployee(null);
+          addNotification('Employee updated', 'success');
+        } else {
+          const nextId = Math.max(0, ...employees.map(e => e.id||0)) + 1;
+          const newEmp = { id: nextId, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, avatar: generateInitials(employeeForm.name), color: employeeForm.color };
+          await dbApi.upsertEmployee(newEmp);
+          setShowEmployeeModal(false);
+          addNotification('Employee added', 'success');
+        }
+      };
+
+      const deleteEmployee = async (employeeId) => {
+        if (!confirm('Are you sure you want to delete this employee?')) return;
+        await dbApi.deleteEmployee(employeeId);
+        addNotification('Employee deleted', 'success');
+      };
+
+      const saveWorkshopShutdown = async () => {
+        if (!shutdownForm.name.trim() || !shutdownForm.startDate || !shutdownForm.endDate) { addNotification('Please fill in all required fields', 'error'); return; }
+        const startDate = new Date(shutdownForm.startDate);
+        const endDate = new Date(shutdownForm.endDate);
+        if (endDate < startDate) { addNotification('End date must be after start date', 'error'); return; }
+
+        if (editingShutdown) {
+          await dbApi.updateShutdown(editingShutdown, { name: shutdownForm.name, startDate, endDate, description: shutdownForm.description });
+          addNotification('Workshop shutdown updated', 'success');
+          setEditingShutdown(null);
+        } else {
+          const newS = { name: shutdownForm.name, startDate, endDate, description: shutdownForm.description };
+          await dbApi.createShutdown(newS);
+          addNotification('Workshop shutdown added', 'success');
+        }
+        setShutdownForm({ name:'', startDate:'', endDate:'', description:'' });
+      };
+
+      const deleteWorkshopShutdown = async (shutdownId) => {
+        if (!confirm('Are you sure you want to delete this workshop shutdown?')) return;
+        await dbApi.deleteWorkshopShutdown(shutdownId);
+        addNotification('Workshop shutdown deleted', 'success');
+      };
+
+      const openEmployeeModal = (employee=null) => {
+        if (employee) {
+          setEditingEmployee(employee);
+          setEmployeeForm({ name: employee.name, department: employee.department, totalLeave: String(employee.totalLeave), usedLeave: String(employee.usedLeave), color: employee.color });
+        } else {
+          setEditingEmployee(null);
+          setEmployeeForm({ name:'', department:'', totalLeave:'160', usedLeave:'0', color: colorOptions[employees.length % colorOptions.length] });
+        }
+        setShowEmployeeModal(true);
+      };
+
+      // Week button: snap to current week
+      const handleModeChange = (mode) => {
+        setViewMode(mode);
+        if (mode === 'week') setCurrentDate(new Date());
+      };
+
+      // open/close day drawer
+      const openDayDrawer = (date) => { setDrawerDate(date); setShowDayDrawer(true); setEditingLeave(null); };
+      const closeDayDrawer = () => { setShowDayDrawer(false); setDrawerDate(null); setEditingLeave(null); };
+
+      // start editing a leave from drawer
+      const startEditLeave = (leave) => {
+        setEditingLeave(leave);
+        const dur = (leave.hours || 0) % 8 === 0 ? `D:${(leave.hours||0)/8}` : `H:${leave.hours||0}`;
+        setEditLeaveForm({
+          employeeId: String(leave.employeeId),
+          type: leave.type,
+          duration: dur,
+          startDate: new Date(leave.startDate).toISOString().slice(0,10)
+        });
+      };
+
+      const saveEditedLeave = async () => {
+        if (!editingLeave) return;
+        const [unit, valueStr] = String(editLeaveForm.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
+        const start = nextWorkingDay(new Date(editLeaveForm.startDate));
+        const end = isHours ? new Date(start) : addWorkingDays(start, n);
+        const hours = isHours ? n : n*8;
+
+        const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
+        // optimistic update
+        setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
+        await dbApi.updateLeave(editingLeave.id, patch);
+        addNotification('Leave updated', 'success');
+        setEditingLeave(null);
+      };
+
+      if (isLoading) {
+        return (
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading...</p>
+            </div>
+          </div>
+        );
+      }
+
+      const days = getCalendarDays();
+      const addEnabled = quickLeaveForm.employeeId && quickLeaveForm.duration && quickLeaveForm.type;
+      const currentYear = new Date().getFullYear();
+
+      const usedHoursThisYearFor = (empId) =>
+        leaveRequests
+          .filter(l => l.employeeId === empId && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === currentYear)
+          .reduce((sum, l) => sum + (l.hours || 0), 0);
+
+      const nextUpcomingFor = (empId) => {
+        const today = new Date();
+        const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const sorted = leaveRequests
+          .filter(l => l.employeeId === empId && new Date(l.startDate) >= t0)
+          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        return sorted[0] || null;
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          {/* Sidebar Overlay */}
+          <div className={`sidebar-overlay ${showSidebar ? 'show' : ''}`} onClick={() => setShowSidebar(false)} />
+
+          {/* Sidebar */}
+          <div className={`sidebar ${showSidebar ? 'open' : ''}`}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-lg font-bold text-gray-900">Menu</h2>
+                <button onClick={() => setShowSidebar(false)} className="p-1 hover:bg-gray-100 rounded">
+                  <Icon name="chevronLeft" className="h-5 w-5 text-gray-500" />
+                </button>
+              </div>
+              <nav className="space-y-2">
+                <button onClick={() => { setCurrentView('calendar'); setShowSidebar(false); }}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${currentView === 'calendar' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Icon name="home" className="h-5 w-5" />
+                  <span>Calendar</span>
+                </button>
+                <button onClick={() => { setCurrentView('team'); setShowSidebar(false); }}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${currentView === 'team' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Icon name="userGroup" className="h-5 w-5" />
+                  <span>Team Members</span>
+                </button>
+                <button onClick={() => { setCurrentView('settings'); setShowSidebar(false); }}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${currentView === 'settings' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Icon name="settings" className="h-5 w-5" />
+                  <span>Settings</span>
+                </button>
+              </nav>
+            </div>
+          </div>
+
+          {/* Connection Status */}
+          <div className={`connection-indicator ${connectionStatus} ${!showConnectionIndicator ? 'hide' : ''}`}>
+            <Icon name={connectionStatus === 'connected' ? 'wifi' : 'wifiOff'} className="h-4 w-4" />
+            <span>{connectionStatus === 'connected' ? (window.__fb?.db ? 'Cloud Sync On' : 'Offline Mode') : 'Offline'}</span>
+          </div>
+
+          {/* Notifications */}
+          {notifications.map(n => (
+            <div key={n.id} className={`notification ${n.type} ${n.show ? 'show' : ''}`}>{n.message}</div>
+          ))}
+
+          {/* Header */}
+          <div className="bg-white shadow-sm border-b">
+            <div className="max-w-7xl mx:auto md:mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <button onClick={() => setShowSidebar(true)} className="p-2 hover:bg-gray-100 rounded-lg">
+                    <Icon name="menu" className="h-6 w-6 text-gray-600" />
+                  </button>
+                  <div className="flex items-center space-x-2">
+                    <Icon name="calendar" className="h-8 w-8 text-blue-600" />
+                    <h1 className="text-2xl font-bold text-gray-900">
+                      Atkin Guitars {currentView === 'team' ? 'Team Members' : currentView === 'settings' ? 'Settings' : 'Leave Calendar'}
+                    </h1>
+                  </div>
+                </div>
+                {currentView === 'calendar' && (
+                  <div className="flex bg-gray-100 rounded-lg p-1">
+                    {['week','month','year'].map(mode => (
+                      <button key={mode} onClick={() => handleModeChange(mode)}
+                        className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content - Calendar View */}
+          {currentView === 'calendar' && (
+            <div className="max-w-7xl mx-auto px-6 py-8">
+              <div className="bg-white rounded-xl shadow-sm border">
+                <div className="flex items-center justify-between p-6 border-b">
+                  <div className="flex items-center space-x-4">
+                    <button onClick={() => navigateCalendar(-1)} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+                    <h2 className="text-xl font-semibold text-gray-900">{getViewTitle()}</h2>
+                    <button onClick={() => navigateCalendar(1)} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  {viewMode === 'year' ? (
+                    <div className={`grid ${getGridColumns()} gap-4`}>
+                      {getCalendarDays().map((month, idx) => {
+                        const monthLeaves = leaveRequests.filter(leave => {
+                          const s = new Date(leave.startDate);
+                          return s.getMonth() === month.getMonth() && s.getFullYear() === month.getFullYear();
+                        });
+                        const map = new Map();
+                        monthLeaves.forEach(leave => {
+                          const id = leave.employeeId;
+                          if (map.has(id)) map.get(id).totalDays += (leave.hours/8);
+                          else map.set(id, { employeeId:id, status: leave.status, totalDays:(leave.hours/8) });
+                        });
+                        const unique = Array.from(map.values());
+                        return (
+                          <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+                               onClick={() => { setCurrentDate(month); setViewMode('month'); }}>
+                            <h3 className="font-medium text-gray-900 mb-2">{monthNames[month.getMonth()]}</h3>
+                            <div className="space-y-1">
+                              {unique.slice(0,3).map(u => {
+                                const emp = employees.find(e => e.id === u.employeeId);
+                                if (!emp) return null;
+                                return (
+                                  <div key={`${u.employeeId}-${month.getMonth()}-${month.getFullYear()}`}
+                                       className={`text-xs px-2 py-1 rounded flex items-center justify-between ${getStatusColor(u.status)}`}>
+                                    <span className="truncate">{emp.name.split(' ')[0]}</span>
+                                    <span className="text-xs ml-2">{u.totalDays}d</span>
+                                  </div>
+                                );
+                              })}
+                              {unique.length > 3 && <div className="text-xs text-gray-500">+{unique.length - 3} more</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className={`grid ${getGridColumns()} gap-1 mb-2`}>
+                        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                          <div key={d} className="p-3 text-center text-sm font-medium text-gray-500">{d}</div>
+                        ))}
+                      </div>
+                      <div className={`grid ${getGridColumns()} gap-1`}>
+                        {days.map((date, idx) => {
+                          const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
+                          const isToday = date.toDateString() === new Date().toDateString();
+                          const weekend = isWeekendDay(date);
+                          const dayLeaves = getLeaveForDate(date);
+                          return (
+                            <div key={idx}
+                                 className={`${viewMode==='week' ? 'min-h-[120px]' : 'min-h-[96px]'} p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
+                                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-red-50 border-red-200' : ''} ${weekend ? 'bg-gray-100' : ''}`}>
+                              <div className="flex justify-between items-start mb-1">
+                                {/* tap date number to expand */}
+                                <button
+                                  onClick={() => openDayDrawer(date)}
+                                  className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'} hover:underline cursor-pointer`}
+                                  title="Tap to expand day"
+                                >
+                                  {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
+                                </button>
+
+                                {isCurrentMonth && isBookableDay(date) && (
+                                  <span onClick={() => {
+                                    setSelectedDate(date);
+                                    setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
+                                    setShowQuickLeaveModal(true);
+                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
+                                )}
+                              </div>
+
+                              <div className="space-y-1">
+                                {dayLeaves.map(leave => {
+                                  if (leave.isShutdown) {
+                                    return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Workshop Closed</div>;
+                                  }
+                                  if (leave.isBankHoliday) {
+                                    return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Bank Holiday</div>;
+                                  }
+                                  const employee = employees.find(e => e.id === leave.employeeId);
+                                  if (!employee) return null;
+                                  return (
+                                    <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70">• {lengthShort(leave)}</span></span>
+                                      <button onClick={async () => {
+                                        if (confirm(`Cancel leave for ${employee?.name}?`)) {
+                                          await dbApi.deleteLeaveRequest(leave.id);
+                                          addNotification('Leave removed', 'success');
+                                        }
+                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
+                                        <Icon name="x" className="h-2 w-2" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Settings View */}
+          {currentView === 'settings' && (
+            <div className="max-w-4xl mx-auto px-6 py-8">
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Workshop Settings</h2>
+                  <p className="text-gray-600">Manage workshop shutdowns and other calendar settings</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <Icon name="factory" className="h-5 w-5 mr-2" />
+                      {editingShutdown ? 'Edit Workshop Shutdown' : 'Add Workshop Shutdown'}
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Shutdown Name *</label>
+                        <input type="text" value={shutdownForm.name}
+                               onChange={(e) => setShutdownForm(prev => ({...prev, name: e.target.value}))}
+                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               placeholder="e.g., Christmas Break, Annual Maintenance" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
+                        <input type="date" value={shutdownForm.startDate}
+                               onChange={(e) => setShutdownForm(prev => ({...prev, startDate: e.target.value}))}
+                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
+                        <input type="date" value={shutdownForm.endDate}
+                               onChange={(e) => setShutdownForm(prev => ({...prev, endDate: e.target.value}))}
+                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                        <textarea value={shutdownForm.description}
+                                  onChange={(e) => setShutdownForm(prev => ({...prev, description: e.target.value}))}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  rows={3} placeholder="Optional description..." />
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={saveWorkshopShutdown}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                          {editingShutdown ? 'Update Workshop Shutdown' : 'Add Workshop Shutdown'}
+                        </button>
+                        {editingShutdown && (
+                          <button
+                            onClick={() => { setEditingShutdown(null); setShutdownForm({ name:'', startDate:'', endDate:'', description:'' }); }}
+                            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Existing Workshop Shutdowns</h3>
+                    <div className="space-y-3">
+                      {workshopShutdowns.length === 0 ? (
+                        <p className="text-gray-500 text-sm italic">No workshop shutdowns scheduled</p>
+                      ) : (
+                        workshopShutdowns.map(shutdown => (
+                          <div key={shutdown.id}
+                               className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative group">
+                            <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingShutdown(shutdown.id);
+                                  setShutdownForm({
+                                    name: shutdown.name,
+                                    startDate: new Date(shutdown.startDate).toISOString().slice(0,10),
+                                    endDate: new Date(shutdown.endDate).toISOString().slice(0,10),
+                                    description: shutdown.description || ''
+                                  });
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                title="Edit"
+                              >
+                                <Icon name="edit" className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => deleteWorkshopShutdown(shutdown.id)}
+                                      className="p-1 text-gray-400 hover:text-red-600 transition-colors" title="Delete">
+                                <Icon name="trash" className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="pr-16">
+                              <h4 className="font-medium text-gray-900">{shutdown.name}</h4>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {new Date(shutdown.startDate).toLocaleDateString()} - {new Date(shutdown.endDate).toLocaleDateString()}
+                              </p>
+                              {shutdown.description && <p className="text-sm text-gray-500 mt-2">{shutdown.description}</p>}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Team Members View */}
+          {currentView === 'team' && (
+            <div className="max-w-4xl mx-auto px-6 py-8">
+              <div className="bg-white rounded-xl shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Team Members</h2>
+                  <button onClick={() => openEmployeeModal()}
+                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                    <Icon name="userAdd" className="h-4 w-4" />
+                    <span>Add Employee</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {employees.map(employee => {
+                    const usedThisYear = usedHoursThisYearFor(employee.id);
+                    const remainingHours = Math.max(0, (employee.totalLeave || 0) - usedThisYear);
+                    const usagePercentage = (usedThisYear / (employee.totalLeave || 1)) * 100;
+                    const upcoming = nextUpcomingFor(employee.id);
+                    const upcomingLenHours = upcoming ? (upcoming.hours || 0) : 0;
+                    const upcomingLenLabel = upcomingLenHours === 8
+                      ? '1 day'
+                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8} days` : `${upcomingLenHours} hours`);
+
+                    return (
+                      <div key={employee.id}
+                           className="bg-gray-50 rounded-lg p-6 hover:shadow-md transition-shadow relative group">
+                        <div className="absolute top-4 right-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => openEmployeeModal(employee)}
+                                  className="p-2 text-gray-400 hover:text-blue-600 bg-white rounded-lg shadow-sm">
+                            <Icon name="edit" className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => deleteEmployee(employee.id)}
+                                  className="p-2 text-gray-400 hover:text-red-600 bg-white rounded-lg shadow-sm">
+                            <Icon name="trash" className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center space-x-4 mb-4">
+                          <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                               style={{ backgroundColor: employee.color }}>
+                            {employee.avatar}
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-gray-900">{employee.name}</h3>
+                            <p className="text-gray-600">{employee.department}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div><span className="text-gray-600">Total:</span><p className="font-medium">{formatHours(employee.totalLeave || 0)}</p></div>
+                            <div><span className="text-gray-600">Used:</span><p className="font-medium">{formatHours(usedThisYear)}</p></div>
+                            <div><span className="text-gray-600">Remaining:</span><p className="font-medium text-green-600">{formatHours(remainingHours)}</p></div>
+                            <div><span className="text-gray-600">Usage:</span><p className="font-medium">{usagePercentage.toFixed(1)}%</p></div>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div className="h-3 rounded-full transition-all duration-300"
+                                 style={{ width: `${Math.min(100, usagePercentage)}%`, backgroundColor: employee.color }} />
+                          </div>
+
+                          {/* Upcoming Leave */}
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Upcoming Leave</h4>
+                            {upcoming ? (
+                              <div className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800">
+                                <span>{upcoming.type}</span>
+                                <span>•</span>
+                                <span>{upcomingLenLabel}</span>
+                                <span>•</span>
+                                <span>{new Date(upcoming.startDate).toLocaleDateString()}</span>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500">No upcoming leave</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Employee Modal */}
+          {showEmployeeModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</h3>
+                  <button onClick={() => setShowEmployeeModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                    <input type="text" value={employeeForm.name}
+                           onChange={(e) => setEmployeeForm(prev => ({...prev, name: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., John Smith" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Department *</label>
+                    <select value={employeeForm.department}
+                            onChange={(e) => setEmployeeForm(prev => ({...prev, department: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Department</option>
+                      <option value="Workshop">Workshop</option>
+                      <option value="Design">Design</option>
+                      <option value="Sales">Sales</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Total Leave (hours)</label>
+                    <input type="number" value={employeeForm.totalLeave}
+                           onChange={(e) => setEmployeeForm(prev => ({...prev, totalLeave: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                           min="0" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Used Leave (hours)</label>
+                    <input type="number" value={employeeForm.usedLeave}
+                           onChange={(e) => setEmployeeForm(prev => ({...prev, usedLeave: e.target.value}))}
+                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                           min="0" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Avatar Color</label>
+                    <div className="flex flex-wrap gap-2">
+                      {colorOptions.map(color => (
+                        <button key={color} type="button"
+                                onClick={() => setEmployeeForm(prev => ({...prev, color}))}
+                                className={`w-8 h-8 rounded-full border-2 ${employeeForm.color === color ? 'border-gray-800 scale-110' : 'border-gray-300'}`}
+                                style={{ backgroundColor: color }} />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button onClick={() => setShowEmployeeModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button onClick={saveEmployee} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                      {editingEmployee ? 'Update' : 'Add'} Employee
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Leave Modal */}
+          {showQuickLeaveModal && selectedDate && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Quick Add Leave - {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={() => setShowQuickLeaveModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
+                    <select
+                      value={quickLeaveForm.employeeId}
+                      onChange={(e) => setQuickLeaveForm(prev => ({...prev, employeeId: e.target.value}))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Employee</option>
+                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                    <select
+                      value={quickLeaveForm.duration}
+                      onChange={(e) => setQuickLeaveForm(prev => ({...prev, duration: e.target.value}))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Duration</option>
+                      <optgroup label="Hours">
+                        <option value="H:1">1 Hour</option>
+                        <option value="H:2">2 Hours</option>
+                        <option value="H:3">3 Hours</option>
+                        <option value="H:4">4 Hours</option>
+                        <option value="H:5">5 Hours</option>
+                        <option value="H:6">6 Hours</option>
+                        <option value="H:7">7 Hours</option>
+                      </optgroup>
+                      <optgroup label="Days">
+                        <option value="D:1">1 Day (8 hours)</option>
+                        <option value="D:2">2 Days (16 hours)</option>
+                        <option value="D:3">3 Days (24 hours)</option>
+                        <option value="D:4">4 Days (32 hours)</option>
+                        <option value="D:5">5 Days (40 hours)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
+                    <select
+                      value={quickLeaveForm.type}
+                      onChange={(e) => setQuickLeaveForm(prev => ({...prev, type: e.target.value}))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Leave Type</option>
+                      <option value="Annual Leave">Annual Leave</option>
+                      <option value="In Lieu">In Lieu</option>
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button onClick={() => setShowQuickLeaveModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button
+                      onClick={saveQuickLeave}
+                      disabled={!addEnabled}
+                      className={`px-4 py-2 rounded-lg text-white ${addEnabled ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                    >
+                      Add Leave
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Day Drawer (expanded day view for mobile) */}
+          {showDayDrawer && drawerDate && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={closeDayDrawer}></div>
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[80vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {drawerDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    {!isWorkingDay(drawerDate) && (
+                      <p className="text-sm text-gray-500">Non-working day</p>
+                    )}
+                  </div>
+                  <button onClick={closeDayDrawer} className="p-2 rounded hover:bg-gray-100">
+                    <Icon name="x" className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  <button
+  onClick={() => {
+    // prep the form
+    setSelectedDate(drawerDate);
+    setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
+
+    // close the drawer so the modal is fully visible
+    setShowDayDrawer(false);
+
+    // open the modal on the next tick (after the drawer collapses)
+    setTimeout(() => setShowQuickLeaveModal(true), 0);
+  }}
+  className={`px-3 py-2 rounded-md text-white ${isBookableDay(drawerDate) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"}`}
+  disabled={!isBookableDay(drawerDate)}
+  title={isBookableDay(drawerDate) ? "Add leave" : "Cannot add leave on non-working day"}
+>
+  Add Leave
+</button>
+
+                </div>
+
+                <div className="space-y-3">
+                  {(() => {
+                    const items = getLeaveForDate(drawerDate);
+                    if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
+                    return items.map(item => {
+                      if (item.isShutdown) {
+                        return (
+                          <div key={item.id} className="p-3 rounded-lg bg-red-50 border border-red-100">
+                            <div className="text-red-800 font-medium">Workshop Closed</div>
+                            <div className="text-sm text-red-700">{item.name}</div>
+                          </div>
+                        );
+                      }
+                      if (item.isBankHoliday) {
+                        return (
+                          <div key={item.id} className="p-3 rounded-lg bg-purple-50 border border-purple-100">
+                            <div className="text-purple-800 font-medium">Bank Holiday</div>
+                            <div className="text-sm text-purple-700">{item.name}</div>
+                          </div>
+                        );
+                      }
+                      const emp = employees.find(e => e.id === item.employeeId);
+                      return (
+                        <div key={item.id} className="p-3 rounded-lg border border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
+                              <div className="text-sm text-gray-600">{item.type} • {lengthLong(item)}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                      onClick={() => startEditLeave(item)}>Edit</button>
+                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                      onClick={async () => {
+                                        if (confirm('Delete this leave?')) {
+                                          await dbApi.deleteLeaveRequest(item.id);
+                                          addNotification('Leave removed', 'success');
+                                        }
+                                      }}>Delete</button>
+                            </div>
+                          </div>
+
+                          {/* Inline editor inside the drawer */}
+                          {editingLeave?.id === item.id && (
+                            <div className="mt-3 border-t pt-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                                  <input type="date"
+                                         value={editLeaveForm.startDate}
+                                         onChange={(e) => setEditLeaveForm(p => ({...p, startDate: e.target.value}))}
+                                         className="w-full px-3 py-2 border rounded-md" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Type</label>
+                                  <select
+                                    value={editLeaveForm.type}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, type: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <option value="Annual Leave">Annual Leave</option>
+                                    <option value="In Lieu">In Lieu</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Duration</label>
+                                  <select
+                                    value={editLeaveForm.duration}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, duration: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <optgroup label="Hours">
+                                      <option value="H:1">1 Hour</option>
+                                      <option value="H:2">2 Hours</option>
+                                      <option value="H:3">3 Hours</option>
+                                      <option value="H:4">4 Hours</option>
+                                      <option value="H:5">5 Hours</option>
+                                      <option value="H:6">6 Hours</option>
+                                      <option value="H:7">7 Hours</option>
+                                    </optgroup>
+                                    <optgroup label="Days">
+                                      <option value="D:1">1 Day (8 hours)</option>
+                                      <option value="D:2">2 Days (16 hours)</option>
+                                      <option value="D:3">3 Days (24 hours)</option>
+                                      <option value="D:4">4 Days (32 hours)</option>
+                                      <option value="D:5">5 Days (40 hours)</option>
+                                    </optgroup>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-2 justify-end">
+                                <button className="px-3 py-2 rounded border" onClick={() => setEditingLeave(null)}>Cancel</button>
+                                <button className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={saveEditedLeave}>Save</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
+  </script>
+</body>
+</html>

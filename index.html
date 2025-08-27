@@ -1043,7 +1043,7 @@
                     const upcomingLenHours = upcoming ? (upcoming.hours || 0) : 0;
                     const upcomingLenLabel = upcomingLenHours === 8
                       ? '1 day'
-                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8} days` : `${upcomingLenHours} hours`);
+                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8}d` : `${upcomingLenHours}h`);
 
                     return (
                       <div key={employee.id}

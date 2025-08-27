@@ -739,19 +739,32 @@ const saveEditedLeave = async () => {
       const addEnabled = quickLeaveForm.employeeId && quickLeaveForm.duration && quickLeaveForm.type;
       const currentYear = new Date().getFullYear();
 
-      const usedHoursThisYearFor = (empId) =>
-        leaveRequests
-          .filter(l => l.employeeId === empId && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === currentYear)
-          .reduce((sum, l) => sum + (l.hours || 0), 0);
-
-      const nextUpcomingFor = (empId) => {
-        const today = new Date();
-        const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const sorted = leaveRequests
-          .filter(l => l.employeeId === empId && new Date(l.startDate) >= t0)
-          .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
-        return sorted[0] || null;
+      
+      const usedHoursThisYearFor = (empId) => {
+        const year = currentYear;
+        let total = 0;
+        for (const l of leaveRequests) {
+          if (l.employeeId !== empId || l.type === 'In Lieu') continue;
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+          // Hour entries (same day, hours < 8): count raw hours if it's in the target year
+          if ((l.hours || 0) > 0 && (l.hours || 0) < 8) {
+            if (s.getFullYear() === year) total += (l.hours || 0);
+            continue;
+          }
+          // For day-style entries, count actual working days in this year, minus exclusions
+          const from = new Date(Math.max(new Date(year, 0, 1), s));
+          const to   = new Date(Math.min(new Date(year, 11, 31), e));
+          for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+            const day = new Date(d);
+            if (isWorkingDay(day) && !isExcluded(l, day)) {
+              total += 8;
+            }
+          }
+        }
+        return total;
       };
+
 
       return (
         <div className="min-h-screen bg-gray-50">

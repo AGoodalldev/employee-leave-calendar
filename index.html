@@ -505,13 +505,13 @@ const lengthShort = (leave) => {
       };
 
       // Only show leave on working days; include shutdowns & bank holidays separately
-      const getLeaveForDate = (date) => {
+            const getLeaveForDate = (date) => {
         const regs = leaveRequests.filter(l => {
           const s = new Date(l.startDate), e = new Date(l.endDate);
-          return date >= s && date <= e && isWorkingDay(date);
+          if (!(date >= s && date <= e && isWorkingDay(date))) return false;
+          return !(Array.isArray(l.excludedDates) && l.excludedDates.includes(isoDate(date)));
         });
-
-        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
+const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
         const res = [...regs];
 
         shut.forEach(s => res.push({
@@ -691,7 +691,27 @@ const lengthShort = (leave) => {
         });
       };
 
-      const saveEditedLeave = async () => {
+      
+      // Remove a single day from a block: prefer exclusion for multi-day, delete for single-day
+      const excludeSingleDay = async (leave, date) => {
+        const dayIso = isoDate(date);
+        const isBlock = (new Date(leave.startDate).toDateString() !== new Date(leave.endDate).toDateString()) || (leave.hours || 0) >= 8;
+        if (!isBlock) {
+          if (confirm(`Delete ${leave.type} for this day?`)) {
+            await dbApi.deleteLeaveRequest(leave.id);
+            setLeaveRequests(prev => prev.filter(x => x.id !== leave.id));
+            addNotification('Leave removed', 'success');
+          }
+          return;
+        }
+        const current = Array.isArray(leave.excludedDates) ? leave.excludedDates.slice() : [];
+        if (current.includes(dayIso)) return;
+        const updated = { ...leave, excludedDates: [...current, dayIso] };
+        setLeaveRequests(prev => prev.map(x => x.id === leave.id ? updated : x));
+        await dbApi.updateLeave(leave.id, { excludedDates: updated.excludedDates });
+        addNotification('Day removed from block', 'success');
+      };
+const saveEditedLeave = async () => {
         if (!editingLeave) return;
         const [unit, valueStr] = String(editLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
@@ -908,13 +928,8 @@ const lengthShort = (leave) => {
                                   if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
-                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70">• {lengthShort(leave)}</span></span>
-                                      <button onClick={async () => {
-                                        if (confirm(`Cancel leave for ${employee?.name}?`)) {
-                                          await dbApi.deleteLeaveRequest(leave.id);
-                                          addNotification('Leave removed', 'success');
-                                        }
-                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
+                                      <button onClick={() => excludeSingleDay(leave, date)} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
                                         <Icon name="x" className="h-2 w-2" />
                                       </button>
                                     </div>
@@ -1342,12 +1357,7 @@ const lengthShort = (leave) => {
                               <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
                                       onClick={() => startEditLeave(item)}>Edit</button>
                               <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
-                                      onClick={async () => {
-                                        if (confirm('Delete this leave?')) {
-                                          await dbApi.deleteLeaveRequest(item.id);
-                                          addNotification('Leave removed', 'success');
-                                        }
-                                      }}>Delete</button>
+                                      onClick={() => excludeSingleDay(item, drawerDate)}>Delete</button>
                             </div>
                           </div>
 

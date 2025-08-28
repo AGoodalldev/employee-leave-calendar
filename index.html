@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Atkin Guitars Leave Calendar</title>
+  <title>Atkin Guitars Leave Calendar — Patched Full</title>
   <link rel="icon" href="data:,">
+  <!-- React / Tailwind / Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); transition: transform 0.3s; z-index: 1000; }
+    .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); transition: transform 0.2s; z-index: 1000; }
     .sidebar.open { transform: translateX(0); }
-    .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; visibility: hidden; transition: all 0.3s; }
+    .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; visibility: hidden; transition: all 0.2s; }
     .sidebar-overlay.show { opacity: 1; visibility: visible; }
     .notification { position: fixed; top: 80px; right: 20px; z-index: 1000; padding: 12px 16px; border-radius: 8px; color: white; transform: translateX(100%); transition: transform 0.3s; }
     .notification.show { transform: translateX(0); }
@@ -21,609 +22,450 @@
     .notification.error { background-color: #EF4444; }
   </style>
 </head>
-<body>
+<body class="bg-gray-50">
   <div id="root"></div>
 
-  <!-- App code -->
   <script type="text/babel">
-    const { useState, useEffect, useCallback, useMemo } = React;
+    const { useState, useEffect, useMemo, useCallback } = React;
 
     const Icon = ({ name, className }) => {
       const paths = {
         menu: "M4 6h16M4 12h16M4 18h16",
         calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-        x: "M6 18L18 6M6 6l12 12",
         chevronLeft: "M15 19l-7-7 7-7",
-        edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-        trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+        x: "M6 18L18 6M6 6l12 12",
       };
-      return (
-        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
-        </svg>
-      );
+      return (<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
+      </svg>);
     };
 
-    // ---- Helpers: dates & bank holidays (UK generic incl. Easter) ----
-    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    // ---- Date helpers & UK bank holidays ----
+    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const isSameDay=(a,b)=>a.toDateString()===b.toDateString();
+    const isWeekend=(d)=>d.getDay()===0||d.getDay()===6;
 
-    const easter = (Y) => {
-      const a = Y % 19;
-      const b = Math.floor(Y / 100);
-      const c = Y % 100;
-      const d = Math.floor(b / 4);
-      const e = b % 4;
-      const f = Math.floor((b + 8) / 25);
-      const g = Math.floor((b - f + 1) / 3);
-      const h = (19 * a + b - d - g + 15) % 30;
-      const i = Math.floor(c / 4);
-      const k = c % 4;
-      const L = (32 + 2 * e + 2 * i - h - k) % 7;
-      const m = Math.floor((a + 11 * h + 22 * L) / 451);
-      const month = Math.floor((h + L - 7 * m + 114) / 31); // 3=March, 4=April
-      const day = ((h + L - 7 * m + 114) % 31) + 1;
-      return new Date(Y, month - 1, day);
+    // Computus
+    const easter=(Y)=>{const a=Y%19,b=Math.floor(Y/100),c=Y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,L=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*L)/451),month=Math.floor((h+L-7*m+114)/31),day=((h+L-7*m+114)%31)+1;return new Date(Y,month-1,day)};
+    const firstMonday=(y,m)=>{const d=new Date(y,m,1),dow=d.getDay(),add=dow===0?1:(dow===1?0:(8-dow));d.setDate(1+add);return d;};
+    const lastMonday=(y,m)=>{const d=new Date(y,m+1,0),dow=d.getDay(),sub=dow===1?0:(dow===0?6:(dow-1));d.setDate(d.getDate()-sub);return d;};
+    const bankHolidays=(y)=>{const E=easter(y),gf=new Date(E);gf.setDate(E.getDate()-2);const em=new Date(E);em.setDate(E.getDate()+1);return[
+      {name:"New Year's Day",date:new Date(y,0,1)},{name:"Good Friday",date:gf},{name:"Easter Monday",date:em},
+      {name:"Early May Bank Holiday",date:firstMonday(y,4)},{name:"Spring Bank Holiday",date:lastMonday(y,4)},
+      {name:"Summer Bank Holiday",date:lastMonday(y,7)},{name:"Christmas Day",date:new Date(y,11,25)},
+      {name:"Boxing Day",date:new Date(y,11,26)}];};
+    const isBankHoliday=(d)=>bankHolidays(d.getFullYear()).some(h=>isSameDay(h.date,d));
+    const isWorkingDay=(d)=>!isWeekend(d)&&!isBankHoliday(d);
+
+    const nextWorkingDay=(d0)=>{const d=new Date(d0);while(!isWorkingDay(d))d.setDate(d.getDate()+1);return d;};
+    const addWorkingDays=(start,days)=>{let d=nextWorkingDay(start);if(days<=1)return d;let left=days-1;while(left>0){d.setDate(d.getDate()+1);if(isWorkingDay(d))left--;}return d;};
+
+    // ---- Local store (no Firebase) ----
+    const DB={
+      getEmployees:()=>{const raw=localStorage.getItem('atkin_employees');if(raw)return JSON.parse(raw);const seed=[
+        {id:1,name:'Sarah Johnson',department:'Workshop',totalLeave:200,usedLeave:64,avatar:'SJ',color:'#3B82F6'},
+        {id:2,name:'Michael Chen',department:'Finishing',totalLeave:160,usedLeave:32,avatar:'MC',color:'#10B981'},
+        {id:3,name:'Emma Davis',department:'Administration',totalLeave:180,usedLeave:96,avatar:'ED',color:'#F59E0B'}
+      ];localStorage.setItem('atkin_employees',JSON.stringify(seed));return seed;},
+      setEmployees:(arr)=>localStorage.setItem('atkin_employees',JSON.stringify(arr)),
+      getLeaves:()=>{const raw=localStorage.getItem('atkin_leave_requests');if(!raw)return [];return JSON.parse(raw).map(r=>({...r,startDate:new Date(r.startDate),endDate:new Date(r.endDate)}));},
+      setLeaves:(rows)=>localStorage.setItem('atkin_leave_requests',JSON.stringify(rows.map(r=>({...r,startDate:r.startDate.toISOString(),endDate:r.endDate.toISOString()})))),
+      getShutdowns:()=>{const raw=localStorage.getItem('atkin_workshop_shutdowns');if(!raw)return [];return JSON.parse(raw).map(s=>({...s,startDate:new Date(s.startDate),endDate:new Date(s.endDate)}));},
+      setShutdowns:(rows)=>localStorage.setItem('atkin_workshop_shutdowns',JSON.stringify(rows.map(s=>({...s,startDate:s.startDate.toISOString(),endDate:s.endDate.toISOString()})))),
     };
 
-    const bankHolidays = (year) => {
-      const E = easter(year);
-      const goodFriday = new Date(E); goodFriday.setDate(E.getDate() - 2);
-      const easterMon  = new Date(E); easterMon.setDate(E.getDate() + 1);
-      const firstMonday = (m) => {
-        const d = new Date(year, m, 1);
-        const dow = d.getDay();
-        const add = dow === 0 ? 1 : (dow === 1 ? 0 : (8 - dow));
-        d.setDate(d.getDate() + add);
-        return d;
-      };
-      const lastMonday = (m) => {
-        const d = new Date(year, m + 1, 0); // last day of month
-        const dow = d.getDay();
-        const sub = dow === 1 ? 0 : (dow === 0 ? 6 : (dow - 1));
-        d.setDate(d.getDate() - sub);
-        return d;
-      };
-      return [
-        { name: "New Year's Day", date: new Date(year, 0, 1) },
-        { name: "Good Friday", date: goodFriday },
-        { name: "Easter Monday", date: easterMon },
-        { name: "Early May Bank Holiday", date: firstMonday(4) },  // May
-        { name: "Spring Bank Holiday", date: lastMonday(4) },      // May
-        { name: "Summer Bank Holiday", date: lastMonday(7) },      // Aug
-        { name: "Christmas Day", date: new Date(year, 11, 25) },
-        { name: "Boxing Day", date: new Date(year, 11, 26) },
-      ];
-    };
-
-    const isSameDay = (a,b) => a.toDateString() === b.toDateString();
-    const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
-    const isBankHoliday = (d) => bankHolidays(d.getFullYear()).some(h => isSameDay(h.date, d));
-    const isWorkingDay = (d) => !isWeekend(d) && !isBankHoliday(d);
-
-    const nextWorkingDay = (d0) => {
-      const d = new Date(d0);
-      while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
-      return d;
-    };
-
-    const addWorkingDays = (start, days) => {
-      let d = nextWorkingDay(start);
-      if (days <= 1) return d;
-      let remaining = days - 1;
-      while (remaining > 0) {
-        d.setDate(d.getDate() + 1);
-        if (isWorkingDay(d)) remaining--;
-      }
-      return d;
-    };
-
-    // ---- LOCAL STORAGE DB (kept from baseline UI to avoid Firebase dependency here) ----
-    const LocalDB = {
-      fetchEmployees: async () => {
-        const raw = localStorage.getItem('atkin_employees');
-        if (raw) return JSON.parse(raw);
-        const seed = [
-          { id: 1, name: 'Andy Goodall', department: 'CNC', totalLeave: 128, usedLeave: 0, color: '#EF4444', avatar: 'AG' },
+    // Seed visible sample leaves if empty
+    const ensureSeedLeaves=()=>{
+      const cur=DB.getLeaves();
+      if(cur.length===0){
+        const seed=[
+          {id:"L1",employeeId:1,type:"Annual Leave",startDate:new Date(2025,7,25),endDate:new Date(2025,7,29),hours:40,exclusions:[]},
+          {id:"L2",employeeId:2,type:"Annual Leave",startDate:new Date(2025,7,28),endDate:new Date(2025,7,28),hours:8,exclusions:[]},
         ];
-        localStorage.setItem('atkin_employees', JSON.stringify(seed));
-        return seed;
-      },
-      upsertEmployee: async (emp) => {
-        const arr = await LocalDB.fetchEmployees();
-        const i = arr.findIndex(e => e.id === emp.id);
-        if (i >= 0) arr[i] = emp; else arr.push(emp);
-        localStorage.setItem('atkin_employees', JSON.stringify(arr));
-      },
-      fetchLeaves: async () => {
-        const raw = localStorage.getItem('atkin_leaves');
-        if (!raw) return [];
-        const arr = JSON.parse(raw);
-        return arr.map(r => ({ ...r, startDate: new Date(r.startDate), endDate: new Date(r.endDate) }));
-      },
-      saveLeaves: async (rows) => {
-        const arr = rows.map(r => ({ ...r, startDate: r.startDate.toISOString(), endDate: r.endDate.toISOString() }));
-        localStorage.setItem('atkin_leaves', JSON.stringify(arr));
-      },
-      createLeave: async (leave) => {
-        const arr = await LocalDB.fetchLeaves();
-        arr.push({ ...leave, id: `local-${Date.now()}-${Math.random().toString(36).slice(2,7)}` });
-        await LocalDB.saveLeaves(arr);
-      },
-      updateLeave: async (id, patch) => {
-        const arr = await LocalDB.fetchLeaves();
-        const i = arr.findIndex(r => r.id === id);
-        if (i >= 0) {
-          arr[i] = { ...arr[i], ...patch };
-          await LocalDB.saveLeaves(arr);
-        }
-      },
-      deleteLeave: async (id) => {
-        const arr = await LocalDB.fetchLeaves();
-        const next = arr.filter(r => r.id !== id);
-        await LocalDB.saveLeaves(next);
-      },
-      fetchShutdowns: async () => {
-        const raw = localStorage.getItem('atkin_shutdowns');
-        if (!raw) return [];
-        const arr = JSON.parse(raw);
-        return arr.map(s => ({ ...s, startDate: new Date(s.startDate), endDate: new Date(s.endDate) }));
-      },
-      saveShutdowns: async (rows) => {
-        const arr = rows.map(s => ({ ...s, startDate: s.startDate.toISOString(), endDate: s.endDate.toISOString() }));
-        localStorage.setItem('atkin_shutdowns', JSON.stringify(arr));
-      },
-      createShutdown: async (s) => {
-        const arr = await LocalDB.fetchShutdowns();
-        arr.push({ ...s, id: `sd-${Date.now()}` });
-        await LocalDB.saveShutdowns(arr);
-      },
-      deleteShutdown: async (id) => {
-        const arr = await LocalDB.fetchShutdowns();
-        const next = arr.filter(s => s.id !== id);
-        await LocalDB.saveShutdowns(next);
+        DB.setLeaves(seed);
       }
     };
 
-    // ---- Main App ----
-    const App = () => {
-      const [employees, setEmployees] = useState([]);
-      const [leaves, setLeaves] = useState([]);
-      const [shutdowns, setShutdowns] = useState([]);
+    // ---- App ----
+    const App=()=>{
+      const [showSidebar,setShowSidebar]=useState(false);
+      const [viewMode,setViewMode]=useState('month'); // week | month | year
+      const [currentDate,setCurrentDate]=useState(new Date()); // today
+      const [employees,setEmployees]=useState([]);
+      const [leaves,setLeaves]=useState([]);
+      const [shutdowns,setShutdowns]=useState([]);
+      const [notifications,setNotifications]=useState([]);
 
-      const [currentDate, setCurrentDate] = useState(new Date());
-      const [viewMode, setViewMode] = useState('month'); // week | month
-      const [selectedDate, setSelectedDate] = useState(null);
-      const [showQuick, setShowQuick] = useState(false);
+      const addNotification=useCallback((message,type='success')=>{
+        const id=Date.now();
+        setNotifications(p=>[...p,{id,message,type,show:false}]);
+        setTimeout(()=>setNotifications(p=>p.map(n=>n.id===id?{...n,show:true}:n)),50);
+        setTimeout(()=>setNotifications(p=>p.filter(n=>n.id!==id)),4000);
+      },[]);
 
-      const [notifications, setNotifications] = useState([]);
+      useEffect(()=>{
+        ensureSeedLeaves();
+        setEmployees(DB.getEmployees());
+        setLeaves(DB.getLeaves());
+        setShutdowns(DB.getShutdowns());
+      },[]);
 
-      const addNotification = useCallback((message, type='success') => {
-        const id = Date.now();
-        setNotifications(prev => [...prev, { id, message, type, show:false }]);
-        setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show:true } : n)), 50);
-        setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 4000);
-      }, []);
-
-      // ---- init ----
-      useEffect(() => {
-        (async () => {
-          const [e, l, s] = await Promise.all([
-            LocalDB.fetchEmployees(), LocalDB.fetchLeaves(), LocalDB.fetchShutdowns()
-          ]);
-          setEmployees(e); setLeaves(l); setShutdowns(s);
-        })();
-      }, []);
-
-      // ---- helpers for effective (exclusions-aware) hours ----
-      const isDateExcluded = (leave, d) => {
-        if (!leave.exclusions) return false;
-        return (leave.exclusions || []).some(x => isSameDay(new Date(x), d));
-      };
-
-      const effectiveHoursOnDay = (leave, d) => {
-        // If the day is outside the range, 0
-        if (d < leave.startDate || d > leave.endDate) return 0;
-        // If exclusion for that day, 0
-        if (isDateExcluded(leave, d)) return 0;
-        // If non-working day, 0
-        if (!isWorkingDay(d)) return 0;
-        // Hours for the block: assume full-day chunks unless stored as explicit hours (<=7)
-        // If leave.hours is multiple of 8, each covered working day contributes 8h.
-        // If leave.hours <= 7, treat as those hours on the FIRST working day only.
-        const total = leave.hours || 0;
-        if (total <= 7) {
-          // single-day hours: only count on the first working day
-          const first = nextWorkingDay(new Date(leave.startDate));
-          return isSameDay(first, d) ? total : 0;
+      // ---- effective hours (exclusions-aware) ----
+      const isExcluded=(leave,d)=> (leave.exclusions||[]).some(x=>isSameDay(new Date(x),d));
+      const effectiveHoursOnDay=(leave,d)=>{
+        if(d<leave.startDate||d>leave.endDate) return 0;
+        if(!isWorkingDay(d)) return 0;
+        if(isExcluded(leave,d)) return 0;
+        const total=leave.hours||0;
+        if(total<=7){ // hours-only on first working day
+          const first=nextWorkingDay(new Date(leave.startDate));
+          return isSameDay(first,d)?total:0;
         }
-        // multi-day
         return 8;
       };
 
-      // Used hours this year (excluding weekends, BH, exclusions)
-      const currentYear = new Date().getFullYear();
-      const usedHoursThisYearFor = (empId) => {
-        let sum = 0;
-        leaves.forEach(l => {
-          if (l.employeeId !== empId) return;
-          if (new Date(l.startDate).getFullYear() !== currentYear) return;
-          // iterate days
-          const cur = new Date(l.startDate);
-          while (cur <= l.endDate) {
-            sum += effectiveHoursOnDay(l, cur);
-            cur.setDate(cur.getDate() + 1);
+      const usedThisYear=(empId, year)=>{
+        let sum=0;
+        for(const l of leaves){
+          if(l.employeeId!==empId) continue;
+          const sd=new Date(l.startDate), ed=new Date(l.endDate);
+          const cur=new Date(sd);
+          while(cur<=ed){
+            if(cur.getFullYear()===year) sum+=effectiveHoursOnDay(l,cur);
+            cur.setDate(cur.getDate()+1);
           }
-        });
+        }
         return sum;
       };
+      const currentYear=new Date().getFullYear();
 
-      const formatHoursCompact = (h) => {
-        const d = Math.floor(h/8), r = h%8;
-        if (d && r) return `${d}d ${r}h`;
-        if (d) return `${d}d`;
-        return `${r}h`;
-      };
-
-      // ---- calendar building ----
-      const getMonthDays = () => {
+      // ---- month/week/year days ----
+      const getMonthDays=()=>{
         const y=currentDate.getFullYear(), m=currentDate.getMonth();
-        const first=new Date(y,m,1); const start=new Date(first);
+        const first=new Date(y,m,1), start=new Date(first);
         start.setDate(start.getDate()-first.getDay());
         return Array.from({length:42},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
       };
+      const getWeekDays=()=>{
+        const s=new Date(currentDate);const day=s.getDay();s.setDate(currentDate.getDate()-day);
+        return Array.from({length:7},(_,i)=>new Date(s.getFullYear(),s.getMonth(),s.getDate()+i));
+      };
+      const getYearMonths=()=>Array.from({length:12},(_,i)=>new Date(currentDate.getFullYear(),i,1));
+      const days=useMemo(()=> viewMode==='week'?getWeekDays(): (viewMode==='year'?getYearMonths():getMonthDays()),[currentDate,viewMode]);
 
-      const days = useMemo(() => getMonthDays(), [currentDate, viewMode]);
+      const shutdownOn=(d)=>shutdowns.some(s=>d>=s.startDate&&d<=s.endDate);
+      const isBookableDay=(d)=>isWorkingDay(d)&&!shutdownOn(d);
 
-      const leavesOnDate = (d) => {
-        // Return list of leaves that yield >0 effective hours that date
-        return leaves.filter(l => effectiveHoursOnDay(l, d) > 0);
+      // ---- chips per day (name-only, de-duped, skip 0h) ----
+      const chipsForDate=(d)=>{
+        const byEmp=new Map();
+        for(const l of leaves){
+          const h=effectiveHoursOnDay(l,d);
+          if(h<=0) continue;
+          if(!byEmp.has(l.employeeId)) byEmp.set(l.employeeId,l);
+        }
+        return Array.from(byEmp.values());
       };
 
-      const shutdownOnDate = (d) => shutdowns.some(s => d >= s.startDate && d <= s.endDate);
+      // ---- Quick Add ----
+      const [showQuick,setShowQuick]=useState(false);
+      const [selectedDate,setSelectedDate]=useState(null);
+      const [quick,setQuick]=useState({employeeId:"1",duration:"D:1",type:"Annual Leave"});
 
-      const isBookableDay = (d) => isWorkingDay(d) && !shutdownOnDate(d);
+      const formatHours=(h)=>{const d=Math.floor(h/8),r=h%8;return d?(r?`${d}d ${r}h`:`${d}d`):`${r}h`;};
 
-      // ---- Quick add form ----
-      const [quick, setQuick] = useState({ employeeId: "", duration: "", type: "" });
+      const saveQuick=()=>{
+        if(!quick.employeeId||!quick.duration||!quick.type){addNotification('Please complete all fields','error');return;}
+        const emp=employees.find(e=>String(e.id)===String(quick.employeeId)); if(!emp){addNotification('Invalid employee','error');return;}
+        const [unit,valStr]=String(quick.duration).split(':'); const n=Math.max(1,parseInt(valStr||'1',10)); const isHours=unit==='H';
+        const start=nextWorkingDay(new Date(selectedDate||new Date()));
+        if(!isBookableDay(start)){addNotification('Selected date is not bookable','error');return;}
+        const end=isHours?new Date(start):addWorkingDays(start,n);
+        const total=isHours?n:n*8;
 
-      const openQuickFor = (d) => {
-        setSelectedDate(d);
-        setQuick({ employeeId:"", duration:"", type:"" });
-        setShowQuick(true);
+        // Over-allocation popup
+        const used=usedThisYear(emp.id,currentYear);
+        const remaining=Math.max(0,(emp.totalLeave||0)-used);
+        if(quick.type!=='In Lieu' && total>remaining){
+          const ok=confirm(`${emp.name} has ${formatHours(remaining)} remaining. This request is ${isHours?`${total}h`:`${n}d`} and will exceed the balance.\nContinue?`);
+          if(!ok) return;
+        }
+
+        const newLeave={id:`L-${Date.now()}`,employeeId:emp.id,type:quick.type,startDate:start,endDate:end,hours:total,exclusions:[]};
+        const nextLeaves=[...leaves,newLeave]; setLeaves(nextLeaves); DB.setLeaves(nextLeaves);
+        setShowQuick(false); addNotification('Leave added','success');
       };
 
-      const saveQuickLeave = async () => {
-        if (!quick.employeeId || !quick.duration || !quick.type) {
-          addNotification('Please complete all fields', 'error'); return;
-        }
-        const emp = employees.find(e => e.id === parseInt(quick.employeeId));
-        if (!emp) { addNotification('Please select a valid employee', 'error'); return; }
+      // ---- Drawer ----
+      const [showDrawer,setShowDrawer]=useState(false);
+      const [drawerDate,setDrawerDate]=useState(null);
+      const openDrawer=(d)=>{setDrawerDate(d);setShowDrawer(true);};
+      const closeDrawer=()=>{setShowDrawer(false);setDrawerDate(null);};
 
-        const [unit, valueStr] = String(quick.duration).split(':');
-        const n = Math.max(1, parseInt(valueStr || '1'));
-        const isHours = unit === 'H';
-
-        // guard non-bookable start
-        const startBase = nextWorkingDay(new Date(selectedDate));
-        if (!isBookableDay(startBase)) {
-          addNotification('Selected date is not bookable (weekend/bank holiday/shutdown)', 'error');
-          return;
-        }
-
-        const start = new Date(startBase);
-        const end = isHours ? new Date(start) : addWorkingDays(start, n);
-        const totalHours = isHours ? n : n * 8;
-
-        // Over-allocation warning
-        const used = usedHoursThisYearFor(emp.id);
-        const remaining = Math.max(0, (emp.totalLeave || 0) - used);
-        if (quick.type !== 'In Lieu' && totalHours > remaining) {
-          const ok = confirm(`This booking exceeds remaining balance by ${formatHoursCompact(totalHours - remaining)}. Continue?`);
-          if (!ok) return;
-        }
-
-        const newLeave = {
-          id: `tmp-${Date.now()}`,
-          employeeId: emp.id,
-          startDate: start,
-          endDate: end,
-          type: quick.type,
-          status: 'approved',
-          hours: totalHours,
-          exclusions: [] // allow day removals later
-        };
-
-        // optimistic add
-        setLeaves(prev => [...prev, newLeave]);
-        await LocalDB.createLeave(newLeave);
-
-        // bump usedLeave stored figure for display parity (optional)
-        const updated = { ...emp, usedLeave: (emp.usedLeave || 0) + totalHours };
-        setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-        await LocalDB.upsertEmployee(updated);
-
-        setShowQuick(false);
-        addNotification('Leave added', 'success');
-      };
-
-      // ---- Day drawer ----
-      const [showDrawer, setShowDrawer] = useState(false);
-      const [drawerDate, setDrawerDate] = useState(null);
-
-      const openDrawer = (d) => { setDrawerDate(d); setShowDrawer(true); };
-      const closeDrawer = () => { setShowDrawer(false); setDrawerDate(null); };
-
-      const perDayText = (leave, d) => {
-        const h = effectiveHoursOnDay(leave, d);
-        if (h === 8) return 'Full Day';
-        if (h === 4) return 'Half Day';
-        if (h > 0) return `${h}h`;
+      const perDayLabel=(leave,d)=>{
+        const h=effectiveHoursOnDay(leave,d);
+        if(h===8) return 'Full Day';
+        if(h===4) return 'Half Day';
+        if(h>0) return `${h}h`;
         return '0h';
-        };
+      };
 
-      const removeDateFromBlock = async (leave, d) => {
-        // toggle exclusion for that date; if all days excluded, delete the leave
-        const ex = new Set((leave.exclusions || []).map(x => new Date(x).toDateString()));
-        const key = d.toDateString();
-        if (ex.has(key)) ex.delete(key); else ex.add(key);
-        const nextEx = Array.from(ex).map(s => new Date(s));
+      const leavesOn=(d)=>leaves.filter(l=>effectiveHoursOnDay(l,d)>0);
 
-        // compute remaining effective hours; if 0 remove leave
-        let remaining = 0;
-        const cur = new Date(leave.startDate);
-        while (cur <= leave.endDate) {
-          const tmp = { ...leave, exclusions: nextEx };
-          remaining += effectiveHoursOnDay(tmp, cur);
-          cur.setDate(cur.getDate() + 1);
-        }
-
-        if (remaining <= 0) {
-          // delete
-          setLeaves(prev => prev.filter(l => l.id !== leave.id));
-          await LocalDB.deleteLeave(leave.id);
-          addNotification('Leave block removed', 'success');
-        } else {
-          // update
-          const updated = { ...leave, exclusions: nextEx, hours: remaining };
-          setLeaves(prev => prev.map(l => l.id === leave.id ? updated : l));
-          await LocalDB.updateLeave(leave.id, { exclusions: nextEx, hours: remaining });
-          addNotification('Day exclusion updated', 'success');
+      const excludeDay=(leave,d)=>{
+        const key=d.toISOString().slice(0,10);
+        const ex=new Set((leave.exclusions||[]).map(s=> (new Date(s)).toISOString().slice(0,10)));
+        if(ex.has(key)) ex.delete(key); else ex.add(key);
+        const nextEx=Array.from(ex);
+        // recompute remaining hours in block
+        let remaining=0; const cur=new Date(leave.startDate); while(cur<=leave.endDate){ remaining+=effectiveHoursOnDay({...leave,exclusions:nextEx},cur); cur.setDate(cur.getDate()+1); }
+        if(remaining<=0){
+          const next=leaves.filter(l=>l.id!==leave.id); setLeaves(next); DB.setLeaves(next); addNotification('Leave block removed','success');
+        }else{
+          const next=leaves.map(l=>l.id===leave.id?{...l,exclusions:nextEx,hours:remaining}:l); setLeaves(next); DB.setLeaves(next); addNotification('Day excluded','success');
         }
       };
 
-      // ---- UI helpers ----
-      const compactName = (full) => full.split(' ')[0];
+      const firstName=(n)=>n.split(' ')[0];
 
-      // De-dup chips: only one chip per employee per date; skip if 0h on that day
-      const chipsForDate = (d) => {
-        const byId = new Map();
-        leaves.forEach(l => {
-          const h = effectiveHoursOnDay(l, d);
-          if (h <= 0) return;
-          const id = l.employeeId;
-          if (!byId.has(id)) byId.set(id, l);
-        });
-        return Array.from(byId.values());
-      };
+      return (<div className="min-h-screen">
+        {/* Sidebar Overlay */}
+        <div className={`sidebar-overlay ${showSidebar?'show':''}`} onClick={()=>setShowSidebar(false)} />
+        {/* Sidebar */}
+        <div className={`sidebar ${showSidebar?'open':''}`}>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold">Menu</h2>
+              <button onClick={()=>setShowSidebar(false)} className="p-1 hover:bg-gray-100 rounded">
+                <Icon name="chevronLeft" className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <nav className="space-y-2 text-sm">
+              <div className="text-gray-600">• Calendar</div>
+              <div className="text-gray-600">• Team Members (coming soon)</div>
+              <div className="text-gray-600">• Settings (coming soon)</div>
+            </nav>
+          </div>
+        </div>
 
-      return (
-        <div className="min-h-screen bg-gray-50">
-          {/* Notifications */}
-          {notifications.map(n => (
-            <div key={n.id} className={`notification ${n.type} ${n.show ? 'show' : ''}`}>{n.message}</div>
-          ))}
+        {/* Notifications */}
+        {notifications.map(n=>(<div key={n.id} className={`notification ${n.type} ${n.show?'show':''}`}>{n.message}</div>))}
 
-          {/* Header */}
-          <div className="bg-white shadow-sm border-b">
-            <div className="max-w-7xl mx:auto md:mx-auto px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+        {/* Header */}
+        <div className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button onClick={()=>setShowSidebar(true)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <Icon name="menu" className="h-6 w-6 text-gray-600" />
+                </button>
+                <div className="flex items-center gap-2">
                   <Icon name="calendar" className="h-7 w-7 text-blue-600" />
-                  <h1 className="text-2xl font-bold text-gray-900">Atkin Guitars Leave Calendar</h1>
+                  <h1 className="text-2xl font-bold">Atkin Guitars Leave Calendar</h1>
                 </div>
-                <div className="flex bg-gray-100 rounded-lg p-1">
-                  {['week','month'].map(mode => (
-                    <button key={mode} onClick={() => setViewMode(mode)}
-                      className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
-                      {mode}
-                    </button>
-                  ))}
-                </div>
+              </div>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {['week','month','year'].map(mode=> (
+                  <button key={mode} onClick={()=>setViewMode(mode)}
+                    className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${viewMode===mode?'bg-white text-gray-900 shadow-sm':'text-gray-600 hover:text-gray-900'}`}>
+                    {mode}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <div className="bg-white rounded-xl shadow-sm border">
-              <div className="flex items-center justify-between p-6 border-b">
-                <div className="flex items-center space-x-4">
-                  <button onClick={() => setCurrentDate(prev => { const nd=new Date(prev); nd.setMonth(prev.getMonth()-1); return nd; })} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
-                  <h2 className="text-xl font-semibold text-gray-900">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
-                  <button onClick={() => setCurrentDate(prev => { const nd=new Date(prev); nd.setMonth(prev.getMonth()+1); return nd; })} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
-                </div>
+        {/* Main */}
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center gap-2">
+                <button onClick={()=>setCurrentDate(d=>{const nd=new Date(d); if(viewMode==='week'){nd.setDate(d.getDate()-7);} else if(viewMode==='year'){nd.setFullYear(d.getFullYear()-1);} else {nd.setMonth(d.getMonth()-1);} return nd;})} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+                <h2 className="text-xl font-semibold">
+                  {viewMode==='year'? currentDate.getFullYear() : `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+                </h2>
+                <button onClick={()=>setCurrentDate(d=>{const nd=new Date(d); if(viewMode==='week'){nd.setDate(d.getDate()+7);} else if(viewMode==='year'){nd.setFullYear(d.getFullYear()+1);} else {nd.setMonth(d.getMonth()+1);} return nd;})} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
               </div>
+              {viewMode!=='year' && (
+                <button onClick={()=>{setSelectedDate(new Date()); setShowQuick(true);}}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Quick Add</button>
+              )}
+            </div>
 
-              <div className="p-6">
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                    <div key={d} className="p-3 text-center text-sm font-medium text-gray-500">{d}</div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-7 gap-1">
-                  {days.map((date, idx) => {
-                    const isCurrentMonth = date.getMonth()===currentDate.getMonth();
-                    const isToday = date.toDateString() === new Date().toDateString();
-                    const weekend = isWeekend(date);
-                    const isPink = !isBookableDay(date) && isCurrentMonth;
-                    const chips = chipsForDate(date);
-
+            <div className="p-6">
+              {viewMode==='year' ? (
+                <div className="grid grid-cols-4 gap-4">
+                  {days.map((month,idx)=>{
+                    const y=month.getFullYear(), m=month.getMonth();
                     return (
-                      <div key={idx}
-                        className={`min-h-[96px] p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
-                          !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-red-50 border-red-200' : ''} ${weekend ? 'bg-gray-100' : ''} ${isPink ? 'bg-red-50 border-red-200' : ''}`}>
-                        <div className="flex justify-between items-start mb-1">
-                          <button onClick={() => openDrawer(date)} className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'} hover:underline`}>
-                            {date.getDate()}
-                          </button>
-
-                          {isCurrentMonth && isBookableDay(date) && (
-                            <span onClick={() => openQuickFor(date)}
-                              className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
-                          )}
-                        </div>
-
-                        <div className="space-y-1">
-                          {chips.map(leave => {
-                            const emp = employees.find(e => e.id === leave.employeeId);
-                            if (!emp) return null;
-                            // Show only the first name (name-only chips), no duration
-                            return (
-                              <div key={leave.id} className="text-xs px-2 py-1 rounded text-center truncate bg-green-100 text-green-800">
-                                {compactName(emp.name)}
-                              </div>
-                            );
-                          })}
-                          {isBankHoliday(date) && <div className="text-xs px-2 py-1 rounded text-center truncate bg-purple-100 text-purple-800">Bank Holiday</div>}
-                          {shutdownOnDate(date) && <div className="text-xs px-2 py-1 rounded text-center truncate bg-red-100 text-red-800">Workshop Closed</div>}
-                        </div>
+                      <div key={idx} className="border rounded p-3 hover:bg-gray-50 cursor-pointer"
+                           onClick={()=>{setCurrentDate(new Date(y,m,1));setViewMode('month');}}>
+                        <div className="font-medium mb-2">{monthNames[m]}</div>
+                        <div className="text-xs text-gray-500">Click to open</div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Add Modal */}
-          {showQuick && selectedDate && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Quick Add Leave - {selectedDate.toLocaleDateString()}</h3>
-                  <button onClick={() => setShowQuick(false)} className="text-gray-400 hover:text-gray-600">✕</button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
-                    <select value={quick.employeeId} onChange={(e) => setQuick(prev => ({...prev, employeeId: e.target.value}))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select Employee</option>
-                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                    </select>
+              ) : (
+                <>
+                  <div className={`grid ${'grid-cols-7'} gap-1 mb-2`}>
+                    {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>(
+                      <div key={d} className="p-3 text-center text-sm font-medium text-gray-500">{d}</div>
+                    ))}
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
-                    <select value={quick.duration} onChange={(e) => setQuick(prev => ({...prev, duration: e.target.value}))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select Duration</option>
-                      <optgroup label="Hours">
-                        <option value="H:1">1 Hour</option>
-                        <option value="H:2">2 Hours</option>
-                        <option value="H:3">3 Hours</option>
-                        <option value="H:4">4 Hours (Half Day)</option>
-                        <option value="H:5">5 Hours</option>
-                        <option value="H:6">6 Hours</option>
-                        <option value="H:7">7 Hours</option>
-                      </optgroup>
-                      <optgroup label="Days">
-                        <option value="D:1">1 Day (8 hours)</option>
-                        <option value="D:2">2 Days (16 hours)</option>
-                        <option value="D:3">3 Days (24 hours)</option>
-                        <option value="D:4">4 Days (32 hours)</option>
-                        <option value="D:5">5 Days (40 hours)</option>
-                      </optgroup>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
-                    <select value={quick.type} onChange={(e) => setQuick(prev => ({...prev, type: e.target.value}))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select Leave Type</option>
-                      <option value="Annual Leave">Annual Leave</option>
-                      <option value="In Lieu">In Lieu</option>
-                    </select>
-                  </div>
-
-                  <div className="flex justify-end space-x-3 pt-2">
-                    <button onClick={() => setShowQuick(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
-                    <button onClick={saveQuickLeave}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      Add Leave
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Day Drawer */}
-          {showDrawer && drawerDate && (
-            <div className="fixed inset-0 z-50">
-              <div className="absolute inset-0 bg-black/40" onClick={closeDrawer}></div>
-              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[80vh] overflow-y-auto">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {drawerDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                    </h3>
-                    {!isWorkingDay(drawerDate) && (
-                      <p className="text-sm text-gray-500">Non-working day</p>
-                    )}
-                  </div>
-                  <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100">
-                    <Icon name="x" className="h-5 w-5 text-gray-600" />
-                  </button>
-                </div>
-
-                <div className="mb-3">
-                  {isBookableDay(drawerDate) ? (
-                    <button onClick={() => { setSelectedDate(drawerDate); setShowDrawer(false); setTimeout(()=>setShowQuick(true), 0); }}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                      Add Leave
-                    </button>
-                  ) : (
-                    <span className="text-sm text-gray-500">This day is not bookable</span>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  {(() => {
-                    const items = leavesOnDate(drawerDate);
-                    if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
-                    return items.map(item => {
-                      const emp = employees.find(e => e.id === item.employeeId);
-                      const label = perDayText(item, drawerDate);
+                  <div className={`grid ${'grid-cols-7'} gap-1`}>
+                    {days.map((date, idx)=>{
+                      const isCurrentMonth = viewMode==='week' || date.getMonth()===currentDate.getMonth();
+                      const isToday = isSameDay(date, new Date());
+                      const chips = chipsForDate(date);
                       return (
-                        <div key={item.id} className="p-3 rounded-lg border border-gray-200">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
-                              <div className="text-sm text-gray-600">{item.type} • {label}</div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
-                                      onClick={() => removeDateFromBlock(item, drawerDate)}>Exclude this day</button>
-                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
-                                      onClick={async () => { await LocalDB.deleteLeave(item.id); setLeaves(prev => prev.filter(l => l.id !== item.id)); addNotification('Leave removed', 'success'); }}>Delete block</button>
-                            </div>
+                        <div key={idx}
+                          className={`min-h-[96px] p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${!isCurrentMonth?'bg-gray-50 text-gray-400':''} ${isToday?'bg-red-50 border-red-200':''}`}>
+                          <div className="flex justify-between items-start mb-1">
+                            <button onClick={()=>{setDrawerDate(date);setShowDrawer(true);}}
+                                    className={`text-sm font-medium ${isToday?'text-red-600':(isCurrentMonth?'text-gray-900':'text-gray-400')} hover:underline`}>
+                              {viewMode==='week'? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
+                            </button>
+                            {isCurrentMonth && isBookableDay(date) && (
+                              <span onClick={()=>{setSelectedDate(date); setShowQuick(true);}}
+                                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            {chips.map(l=>{
+                              const emp=employees.find(e=>e.id===l.employeeId);
+                              if(!emp) return null;
+                              return <div key={l.id} className="text-xs px-2 py-1 rounded text-center truncate bg-green-100 text-green-800">{emp.name.split(' ')[0]}</div>;
+                            })}
+                            {!isWorkingDay(date) && isBankHoliday(date) && (
+                              <div className="text-xs px-2 py-1 rounded text-center bg-purple-100 text-purple-800">Bank Holiday</div>
+                            )}
+                            {shutdownOn(date) && (
+                              <div className="text-xs px-2 py-1 rounded text-center bg-red-100 text-red-800">Workshop Closed</div>
+                            )}
                           </div>
                         </div>
                       );
-                    });
-                  })()}
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Add Modal */}
+        {showQuick && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Quick Add Leave — { (selectedDate||new Date()).toLocaleDateString() }</h3>
+                <button onClick={()=>setShowQuick(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
+                  <select className="w-full px-3 py-2 border rounded" value={String(quick.employeeId)}
+                          onChange={(e)=>setQuick(p=>({...p,employeeId:e.target.value}))}>
+                    {employees.map(emp=>(<option key={emp.id} value={emp.id}>{emp.name}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Duration</label>
+                  <select className="w-full px-3 py-2 border rounded" value={quick.duration}
+                          onChange={(e)=>setQuick(p=>({...p,duration:e.target.value}))}>
+                    <optgroup label="Hours">
+                      <option value="H:1">1 Hour</option>
+                      <option value="H:2">2 Hours</option>
+                      <option value="H:3">3 Hours</option>
+                      <option value="H:4">4 Hours (Half Day)</option>
+                      <option value="H:5">5 Hours</option>
+                      <option value="H:6">6 Hours</option>
+                      <option value="H:7">7 Hours</option>
+                    </optgroup>
+                    <optgroup label="Days">
+                      <option value="D:1">1 Day (8 hours)</option>
+                      <option value="D:2">2 Days (16 hours)</option>
+                      <option value="D:3">3 Days (24 hours)</option>
+                      <option value="D:4">4 Days (32 hours)</option>
+                      <option value="D:5">5 Days (40 hours)</option>
+                    </optgroup>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                  <select className="w-full px-3 py-2 border rounded" value={quick.type}
+                          onChange={(e)=>setQuick(p=>({...p,type:e.target.value}))}>
+                    <option>Annual Leave</option>
+                    <option>In Lieu</option>
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button className="px-4 py-2 rounded border" onClick={()=>setShowQuick(false)}>Cancel</button>
+                  <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={saveQuick}>Add</button>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-        </div>
-      );
+        {/* Day Drawer */}
+        {showDrawer && drawerDate && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={closeDrawer}></div>
+            <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[80vh] overflow-y-auto">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    {drawerDate.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+                  </h3>
+                  {!isWorkingDay(drawerDate) && <p className="text-sm text-gray-500">Non-working day</p>}
+                </div>
+                <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100"><Icon name="x" className="h-5 w-5 text-gray-600"/></button>
+              </div>
+
+              <div className="mb-3">
+                {isBookableDay(drawerDate)
+                  ? <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            onClick={()=>{setSelectedDate(drawerDate); setShowDrawer(false); setTimeout(()=>setShowQuick(true),0);}}>Add Leave</button>
+                  : <span className="text-sm text-gray-500">This day is not bookable</span>}
+              </div>
+
+              <div className="space-y-3">
+                {(() => {
+                  const items = leavesOn(drawerDate);
+                  if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
+                  return items.map(item => {
+                    const emp = employees.find(e => e.id === item.employeeId);
+                    const label = perDayLabel(item, drawerDate);
+                    return (
+                      <div key={item.id} className="p-3 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
+                            <div className="text-sm text-gray-600">{item.type} • {label}</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                    onClick={()=>excludeDay(item, drawerDate)}>Exclude this day</button>
+                            <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                    onClick={()=>{ const next=leaves.filter(l=>l.id!==item.id); setLeaves(next); DB.setLeaves(next); addNotification('Leave removed','success'); }}>Delete block</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>);
     };
 
-    ReactDOM.render(<App />, document.getElementById('root'));
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
   </script>
 </body>
 </html>

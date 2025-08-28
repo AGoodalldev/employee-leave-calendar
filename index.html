@@ -3,386 +3,627 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Leave Calendar (Patched Full)</title>
+  <title>Atkin Guitars Leave Calendar</title>
   <link rel="icon" href="data:,">
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transform: translateX(-100%); transition: transform 0.3s; z-index: 1000; }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; visibility: hidden; transition: all 0.3s; }
+    .sidebar-overlay.show { opacity: 1; visibility: visible; }
+    .notification { position: fixed; top: 80px; right: 20px; z-index: 1000; padding: 12px 16px; border-radius: 8px; color: white; transform: translateX(100%); transition: transform 0.3s; }
+    .notification.show { transform: translateX(0); }
+    .notification.success { background-color: #10B981; }
+    .notification.error { background-color: #EF4444; }
   </style>
 </head>
-<body class="bg-gray-50">
+<body>
   <div id="root"></div>
 
+  <!-- App code -->
   <script type="text/babel">
-    const { useState, useMemo } = React;
+    const { useState, useEffect, useCallback, useMemo } = React;
 
-    // ---------------- Bank Holidays (UK) ----------------
-    function easterSunday(year) {
-      // Anonymous Gregorian algorithm (safe vars)
-      const a = year % 19;
-      const b = Math.floor(year / 100);
-      const c = year % 100;
+    const Icon = ({ name, className }) => {
+      const paths = {
+        menu: "M4 6h16M4 12h16M4 18h16",
+        calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+        x: "M6 18L18 6M6 6l12 12",
+        chevronLeft: "M15 19l-7-7 7-7",
+        edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+        trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+      };
+      return (
+        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={paths[name]} />
+        </svg>
+      );
+    };
+
+    // ---- Helpers: dates & bank holidays (UK generic incl. Easter) ----
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    const easter = (Y) => {
+      const a = Y % 19;
+      const b = Math.floor(Y / 100);
+      const c = Y % 100;
       const d = Math.floor(b / 4);
       const e = b % 4;
       const f = Math.floor((b + 8) / 25);
       const g = Math.floor((b - f + 1) / 3);
       const h = (19 * a + b - d - g + 15) % 30;
-      const iFix = Math.floor(c / 4);
+      const i = Math.floor(c / 4);
       const k = c % 4;
-      const l = (32 + 2 * e + 2 * iFix - h - k) % 7;
-      const m = Math.floor((a + 11 * h + 22 * l) / 451);
-      const month = Math.floor((h + l - 7 * m + 114) / 31);    // 3=March, 4=April
-      const day = ((h + l - 7 * m + 114) % 31) + 1;
-      return new Date(year, month - 1, day);
-    }
-    function bankHolidays(year) {
-      const hs = [];
-      const easter = easterSunday(year);
-      const goodFriday = new Date(easter); goodFriday.setDate(goodFriday.getDate() - 2);
-      const easterMonday = new Date(easter); easterMonday.setDate(easterMonday.getDate() + 1);
+      const L = (32 + 2 * e + 2 * i - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * L) / 451);
+      const month = Math.floor((h + L - 7 * m + 114) / 31); // 3=March, 4=April
+      const day = ((h + L - 7 * m + 114) % 31) + 1;
+      return new Date(Y, month - 1, day);
+    };
+
+    const bankHolidays = (year) => {
+      const E = easter(year);
+      const goodFriday = new Date(E); goodFriday.setDate(E.getDate() - 2);
+      const easterMon  = new Date(E); easterMon.setDate(E.getDate() + 1);
       const firstMonday = (m) => {
         const d = new Date(year, m, 1);
         const dow = d.getDay();
         const add = dow === 0 ? 1 : (dow === 1 ? 0 : (8 - dow));
-        d.setDate(1 + add); return d;
+        d.setDate(d.getDate() + add);
+        return d;
       };
       const lastMonday = (m) => {
-        const d = new Date(year, m + 1, 0);
+        const d = new Date(year, m + 1, 0); // last day of month
         const dow = d.getDay();
         const sub = dow === 1 ? 0 : (dow === 0 ? 6 : (dow - 1));
-        d.setDate(d.getDate() - sub); return d;
+        d.setDate(d.getDate() - sub);
+        return d;
       };
-      hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
-      hs.push({ name: "Good Friday", date: goodFriday });
-      hs.push({ name: "Easter Monday", date: easterMonday });
-      hs.push({ name: "Early May Bank Holiday", date: firstMonday(4) });  // May
-      hs.push({ name: "Spring Bank Holiday", date: lastMonday(4) });      // May
-      hs.push({ name: "Summer Bank Holiday", date: lastMonday(7) });      // Aug
-      hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
-      hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
-      return hs;
-    }
-    const sameDay = (a,b) => a.toDateString() === b.toDateString();
-    const isBankHoliday = (date) => bankHolidays(date.getFullYear()).some(h => sameDay(h.date, date));
-    const isWeekend = (d) => d.getDay()===0 || d.getDay()===6;
-    const isWorkingDay = (d) => !isWeekend(d) && !isBankHoliday(d);
-
-    // ---------------- Helpers ----------------
-    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const shortMonth = (m) => monthNames[m].slice(0,3);
-
-    function* workingDaysBetweenInclusive(start, end, excludeDatesSet) {
-      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const zEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      while (d <= zEnd) {
-        const key = d.toISOString().slice(0,10);
-        if (isWorkingDay(d) && !(excludeDatesSet && excludeDatesSet.has(key))) {
-          yield new Date(d);
-        }
-        d.setDate(d.getDate()+1);
-      }
-    }
-
-    const hoursLabelForDay = (h) => {
-      if (h >= 8 && h % 8 === 0) return "Full Day";
-      if (h === 4) return "Half Day";
-      return h + "h";
+      return [
+        { name: "New Year's Day", date: new Date(year, 0, 1) },
+        { name: "Good Friday", date: goodFriday },
+        { name: "Easter Monday", date: easterMon },
+        { name: "Early May Bank Holiday", date: firstMonday(4) },  // May
+        { name: "Spring Bank Holiday", date: lastMonday(4) },      // May
+        { name: "Summer Bank Holiday", date: lastMonday(7) },      // Aug
+        { name: "Christmas Day", date: new Date(year, 11, 25) },
+        { name: "Boxing Day", date: new Date(year, 11, 26) },
+      ];
     };
 
-    // ---------------- Demo Data ----------------
-    const seedEmployees = [
-      { id: 1, name: "Andy Goodall", department: "CNC", totalLeave: 128, color: "#34D399" }
-    ];
+    const isSameDay = (a,b) => a.toDateString() === b.toDateString();
+    const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
+    const isBankHoliday = (d) => bankHolidays(d.getFullYear()).some(h => isSameDay(h.date, d));
+    const isWorkingDay = (d) => !isWeekend(d) && !isBankHoliday(d);
 
-    const seedLeaves = [
-      // hours: 32 = 4 days block
-      { id: "L1", employeeId: 1, type: "Annual Leave", startDate: new Date(2025,7,18), endDate: new Date(2025,7,21), hours: 32, excludedDates: [] },
-      // a separate 1 day later in the month
-      { id: "L2", employeeId: 1, type: "Annual Leave", startDate: new Date(2025,7,27), endDate: new Date(2025,7,27), hours: 8, excludedDates: [] },
-    ];
+    const nextWorkingDay = (d0) => {
+      const d = new Date(d0);
+      while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
+      return d;
+    };
 
-    // ---------------- App ----------------
-    function App() {
-      const [currentDate, setCurrentDate] = useState(new Date(2025,7,1));
-      const [employees, setEmployees] = useState(seedEmployees);
-      const [leaves, setLeaves] = useState(seedLeaves);
+    const addWorkingDays = (start, days) => {
+      let d = nextWorkingDay(start);
+      if (days <= 1) return d;
+      let remaining = days - 1;
+      while (remaining > 0) {
+        d.setDate(d.getDate() + 1);
+        if (isWorkingDay(d)) remaining--;
+      }
+      return d;
+    };
+
+    // ---- LOCAL STORAGE DB (kept from baseline UI to avoid Firebase dependency here) ----
+    const LocalDB = {
+      fetchEmployees: async () => {
+        const raw = localStorage.getItem('atkin_employees');
+        if (raw) return JSON.parse(raw);
+        const seed = [
+          { id: 1, name: 'Andy Goodall', department: 'CNC', totalLeave: 128, usedLeave: 0, color: '#EF4444', avatar: 'AG' },
+        ];
+        localStorage.setItem('atkin_employees', JSON.stringify(seed));
+        return seed;
+      },
+      upsertEmployee: async (emp) => {
+        const arr = await LocalDB.fetchEmployees();
+        const i = arr.findIndex(e => e.id === emp.id);
+        if (i >= 0) arr[i] = emp; else arr.push(emp);
+        localStorage.setItem('atkin_employees', JSON.stringify(arr));
+      },
+      fetchLeaves: async () => {
+        const raw = localStorage.getItem('atkin_leaves');
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return arr.map(r => ({ ...r, startDate: new Date(r.startDate), endDate: new Date(r.endDate) }));
+      },
+      saveLeaves: async (rows) => {
+        const arr = rows.map(r => ({ ...r, startDate: r.startDate.toISOString(), endDate: r.endDate.toISOString() }));
+        localStorage.setItem('atkin_leaves', JSON.stringify(arr));
+      },
+      createLeave: async (leave) => {
+        const arr = await LocalDB.fetchLeaves();
+        arr.push({ ...leave, id: `local-${Date.now()}-${Math.random().toString(36).slice(2,7)}` });
+        await LocalDB.saveLeaves(arr);
+      },
+      updateLeave: async (id, patch) => {
+        const arr = await LocalDB.fetchLeaves();
+        const i = arr.findIndex(r => r.id === id);
+        if (i >= 0) {
+          arr[i] = { ...arr[i], ...patch };
+          await LocalDB.saveLeaves(arr);
+        }
+      },
+      deleteLeave: async (id) => {
+        const arr = await LocalDB.fetchLeaves();
+        const next = arr.filter(r => r.id !== id);
+        await LocalDB.saveLeaves(next);
+      },
+      fetchShutdowns: async () => {
+        const raw = localStorage.getItem('atkin_shutdowns');
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return arr.map(s => ({ ...s, startDate: new Date(s.startDate), endDate: new Date(s.endDate) }));
+      },
+      saveShutdowns: async (rows) => {
+        const arr = rows.map(s => ({ ...s, startDate: s.startDate.toISOString(), endDate: s.endDate.toISOString() }));
+        localStorage.setItem('atkin_shutdowns', JSON.stringify(arr));
+      },
+      createShutdown: async (s) => {
+        const arr = await LocalDB.fetchShutdowns();
+        arr.push({ ...s, id: `sd-${Date.now()}` });
+        await LocalDB.saveShutdowns(arr);
+      },
+      deleteShutdown: async (id) => {
+        const arr = await LocalDB.fetchShutdowns();
+        const next = arr.filter(s => s.id !== id);
+        await LocalDB.saveShutdowns(next);
+      }
+    };
+
+    // ---- Main App ----
+    const App = () => {
+      const [employees, setEmployees] = useState([]);
+      const [leaves, setLeaves] = useState([]);
+      const [shutdowns, setShutdowns] = useState([]);
+
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [viewMode, setViewMode] = useState('month'); // week | month
       const [selectedDate, setSelectedDate] = useState(null);
-      const [showAdd, setShowAdd] = useState(false);
+      const [showQuick, setShowQuick] = useState(false);
 
-      // compute days in view (month)
-      const days = useMemo(() => {
-        const y = currentDate.getFullYear(), m = currentDate.getMonth();
-        const first = new Date(y,m,1);
-        const start = new Date(first); start.setDate(start.getDate() - first.getDay());
-        return Array.from({length:42}, (_,i) => new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
-      }, [currentDate]);
+      const [notifications, setNotifications] = useState([]);
 
-      // per-day entries (dedup + skip 0h)
-      const dayEntries = useMemo(() => {
-        const map = new Map(); // key dateStr -> array of {employeeId, leaveId, hoursForThatDay}
-        for (const lv of leaves) {
-          const excl = new Set((lv.excludedDates||[]).map(s => s));
-          const sd = new Date(lv.startDate), ed = new Date(lv.endDate);
-          const isBlock = (lv.hours % 8 === 0) && (sd.toDateString() !== ed.toDateString());
-          if (isBlock) {
-            for (const d of workingDaysBetweenInclusive(sd, ed, excl)) {
-              const dateStr = d.toISOString().slice(0,10);
-              if (!map.has(dateStr)) map.set(dateStr, []);
-              // 8 hours per included working day
-              map.get(dateStr).push({ employeeId: lv.employeeId, leaveId: lv.id, type: lv.type, hours: 8 });
-            }
-          } else {
-            // hours on the startDate only if working day and not excluded
-            const dateStr = sd.toISOString().slice(0,10);
-            if (isWorkingDay(sd) && !excl.has(dateStr)) {
-              if (!map.has(dateStr)) map.set(dateStr, []);
-              map.get(dateStr).push({ employeeId: lv.employeeId, leaveId: lv.id, type: lv.type, hours: lv.hours });
-            }
-          }
-        }
-        // dedup per employee per day: keep max hours entry for that day
-        for (const [k, arr] of map) {
-          const bestByEmp = new Map();
-          arr.forEach(item => {
-            if (!bestByEmp.has(item.employeeId) || bestByEmp.get(item.employeeId).hours < item.hours) {
-              bestByEmp.set(item.employeeId, item);
-            }
-          });
-          // Filter out 0h (shouldn't happen here, but safe)
-          map.set(k, Array.from(bestByEmp.values()).filter(x => x.hours > 0));
-        }
-        return map;
-      }, [leaves]);
+      const addNotification = useCallback((message, type='success') => {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message, type, show:false }]);
+        setTimeout(() => setNotifications(prev => prev.map(n => n.id === id ? { ...n, show:true } : n)), 50);
+        setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 4000);
+      }, []);
 
-      // Used/Remaining hours (year-aware) from leaves breakdown
-      const usedHoursThisYear = (empId, year) => {
-        let total = 0;
-        for (const lv of leaves) {
-          if (lv.employeeId !== empId) continue;
-          const excl = new Set((lv.excludedDates||[]));
-          const sd = new Date(lv.startDate), ed = new Date(lv.endDate);
-          const isBlock = (lv.hours % 8 === 0) && (sd.toDateString() !== ed.toDateString());
-          if (isBlock) {
-            for (const d of workingDaysBetweenInclusive(sd, ed, excl)) {
-              if (d.getFullYear()===year) total += 8;
-            }
-          } else {
-            const ds = sd;
-            if (ds.getFullYear()===year && isWorkingDay(ds) && !excl.has(ds.toISOString().slice(0,10))) total += lv.hours;
-          }
-        }
-        return total;
+      // ---- init ----
+      useEffect(() => {
+        (async () => {
+          const [e, l, s] = await Promise.all([
+            LocalDB.fetchEmployees(), LocalDB.fetchLeaves(), LocalDB.fetchShutdowns()
+          ]);
+          setEmployees(e); setLeaves(l); setShutdowns(s);
+        })();
+      }, []);
+
+      // ---- helpers for effective (exclusions-aware) hours ----
+      const isDateExcluded = (leave, d) => {
+        if (!leave.exclusions) return false;
+        return (leave.exclusions || []).some(x => isSameDay(new Date(x), d));
       };
 
-      const currentYear = currentDate.getFullYear();
+      const effectiveHoursOnDay = (leave, d) => {
+        // If the day is outside the range, 0
+        if (d < leave.startDate || d > leave.endDate) return 0;
+        // If exclusion for that day, 0
+        if (isDateExcluded(leave, d)) return 0;
+        // If non-working day, 0
+        if (!isWorkingDay(d)) return 0;
+        // Hours for the block: assume full-day chunks unless stored as explicit hours (<=7)
+        // If leave.hours is multiple of 8, each covered working day contributes 8h.
+        // If leave.hours <= 7, treat as those hours on the FIRST working day only.
+        const total = leave.hours || 0;
+        if (total <= 7) {
+          // single-day hours: only count on the first working day
+          const first = nextWorkingDay(new Date(leave.startDate));
+          return isSameDay(first, d) ? total : 0;
+        }
+        // multi-day
+        return 8;
+      };
 
-      const addLeave = (form) => {
-        // form: { employeeId, qty, unit, type, startDate }
-        const emp = employees.find(e => e.id === parseInt(form.employeeId));
-        if (!emp) return;
-        const requestedHours = form.unit === 'H' ? form.qty : (form.qty * 8);
+      // Used hours this year (excluding weekends, BH, exclusions)
+      const currentYear = new Date().getFullYear();
+      const usedHoursThisYearFor = (empId) => {
+        let sum = 0;
+        leaves.forEach(l => {
+          if (l.employeeId !== empId) return;
+          if (new Date(l.startDate).getFullYear() !== currentYear) return;
+          // iterate days
+          const cur = new Date(l.startDate);
+          while (cur <= l.endDate) {
+            sum += effectiveHoursOnDay(l, cur);
+            cur.setDate(cur.getDate() + 1);
+          }
+        });
+        return sum;
+      };
 
-        // compute remaining
-        const used = usedHoursThisYear(emp.id, currentYear);
+      const formatHoursCompact = (h) => {
+        const d = Math.floor(h/8), r = h%8;
+        if (d && r) return `${d}d ${r}h`;
+        if (d) return `${d}d`;
+        return `${r}h`;
+      };
+
+      // ---- calendar building ----
+      const getMonthDays = () => {
+        const y=currentDate.getFullYear(), m=currentDate.getMonth();
+        const first=new Date(y,m,1); const start=new Date(first);
+        start.setDate(start.getDate()-first.getDay());
+        return Array.from({length:42},(_,i)=>new Date(start.getFullYear(),start.getMonth(),start.getDate()+i));
+      };
+
+      const days = useMemo(() => getMonthDays(), [currentDate, viewMode]);
+
+      const leavesOnDate = (d) => {
+        // Return list of leaves that yield >0 effective hours that date
+        return leaves.filter(l => effectiveHoursOnDay(l, d) > 0);
+      };
+
+      const shutdownOnDate = (d) => shutdowns.some(s => d >= s.startDate && d <= s.endDate);
+
+      const isBookableDay = (d) => isWorkingDay(d) && !shutdownOnDate(d);
+
+      // ---- Quick add form ----
+      const [quick, setQuick] = useState({ employeeId: "", duration: "", type: "" });
+
+      const openQuickFor = (d) => {
+        setSelectedDate(d);
+        setQuick({ employeeId:"", duration:"", type:"" });
+        setShowQuick(true);
+      };
+
+      const saveQuickLeave = async () => {
+        if (!quick.employeeId || !quick.duration || !quick.type) {
+          addNotification('Please complete all fields', 'error'); return;
+        }
+        const emp = employees.find(e => e.id === parseInt(quick.employeeId));
+        if (!emp) { addNotification('Please select a valid employee', 'error'); return; }
+
+        const [unit, valueStr] = String(quick.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
+
+        // guard non-bookable start
+        const startBase = nextWorkingDay(new Date(selectedDate));
+        if (!isBookableDay(startBase)) {
+          addNotification('Selected date is not bookable (weekend/bank holiday/shutdown)', 'error');
+          return;
+        }
+
+        const start = new Date(startBase);
+        const end = isHours ? new Date(start) : addWorkingDays(start, n);
+        const totalHours = isHours ? n : n * 8;
+
+        // Over-allocation warning
+        const used = usedHoursThisYearFor(emp.id);
         const remaining = Math.max(0, (emp.totalLeave || 0) - used);
-        if (requestedHours > remaining) {
-          const ok = confirm(`${emp.name} has only ${Math.floor(remaining/8)}d ${(remaining%8)||0}h remaining for ${currentYear}.\nThis request is ${form.unit==='H'?requestedHours+'h':(form.qty+'d')} and will exceed the balance.\n\nDo you want to continue?`);
+        if (quick.type !== 'In Lieu' && totalHours > remaining) {
+          const ok = confirm(`This booking exceeds remaining balance by ${formatHoursCompact(totalHours - remaining)}. Continue?`);
           if (!ok) return;
         }
 
-        const start = new Date(form.startDate);
         const newLeave = {
-          id: 'L' + Date.now(),
-          employeeId: parseInt(form.employeeId),
-          type: form.type,
+          id: `tmp-${Date.now()}`,
+          employeeId: emp.id,
           startDate: start,
-          endDate: form.unit === 'H' ? new Date(start) : (()=>{
-            // add working days (qty-1) to reach end (inclusive)
-            let d = new Date(start);
-            let remaining = form.qty - 1;
-            while (remaining > 0) {
-              d.setDate(d.getDate()+1);
-              if (isWorkingDay(d)) remaining--;
-            }
-            return d;
-          })(),
-          hours: requestedHours,
-          excludedDates: []
+          endDate: end,
+          type: quick.type,
+          status: 'approved',
+          hours: totalHours,
+          exclusions: [] // allow day removals later
         };
+
+        // optimistic add
         setLeaves(prev => [...prev, newLeave]);
-        setShowAdd(false);
+        await LocalDB.createLeave(newLeave);
+
+        // bump usedLeave stored figure for display parity (optional)
+        const updated = { ...emp, usedLeave: (emp.usedLeave || 0) + totalHours };
+        setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+        await LocalDB.upsertEmployee(updated);
+
+        setShowQuick(false);
+        addNotification('Leave added', 'success');
       };
 
-      // Drawer helpers: list entries for the clicked day with per-day label
-      const entriesForDay = (d) => {
-        const key = d.toISOString().slice(0,10);
-        return dayEntries.get(key) || [];
+      // ---- Day drawer ----
+      const [showDrawer, setShowDrawer] = useState(false);
+      const [drawerDate, setDrawerDate] = useState(null);
+
+      const openDrawer = (d) => { setDrawerDate(d); setShowDrawer(true); };
+      const closeDrawer = () => { setShowDrawer(false); setDrawerDate(null); };
+
+      const perDayText = (leave, d) => {
+        const h = effectiveHoursOnDay(leave, d);
+        if (h === 8) return 'Full Day';
+        if (h === 4) return 'Half Day';
+        if (h > 0) return `${h}h`;
+        return '0h';
+        };
+
+      const removeDateFromBlock = async (leave, d) => {
+        // toggle exclusion for that date; if all days excluded, delete the leave
+        const ex = new Set((leave.exclusions || []).map(x => new Date(x).toDateString()));
+        const key = d.toDateString();
+        if (ex.has(key)) ex.delete(key); else ex.add(key);
+        const nextEx = Array.from(ex).map(s => new Date(s));
+
+        // compute remaining effective hours; if 0 remove leave
+        let remaining = 0;
+        const cur = new Date(leave.startDate);
+        while (cur <= leave.endDate) {
+          const tmp = { ...leave, exclusions: nextEx };
+          remaining += effectiveHoursOnDay(tmp, cur);
+          cur.setDate(cur.getDate() + 1);
+        }
+
+        if (remaining <= 0) {
+          // delete
+          setLeaves(prev => prev.filter(l => l.id !== leave.id));
+          await LocalDB.deleteLeave(leave.id);
+          addNotification('Leave block removed', 'success');
+        } else {
+          // update
+          const updated = { ...leave, exclusions: nextEx, hours: remaining };
+          setLeaves(prev => prev.map(l => l.id === leave.id ? updated : l));
+          await LocalDB.updateLeave(leave.id, { exclusions: nextEx, hours: remaining });
+          addNotification('Day exclusion updated', 'success');
+        }
       };
 
-      const firstName = (full) => full.split(" ")[0];
+      // ---- UI helpers ----
+      const compactName = (full) => full.split(' ')[0];
 
-      // UI state for quick add form
-      const [form, setForm] = useState({ employeeId:"1", unit:"D", qty:1, type:"Annual Leave" });
+      // De-dup chips: only one chip per employee per date; skip if 0h on that day
+      const chipsForDate = (d) => {
+        const byId = new Map();
+        leaves.forEach(l => {
+          const h = effectiveHoursOnDay(l, d);
+          if (h <= 0) return;
+          const id = l.employeeId;
+          if (!byId.has(id)) byId.set(id, l);
+        });
+        return Array.from(byId.values());
+      };
 
       return (
-        <div className="max-w-6xl mx-auto p-6">
-          <header className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <button className="px-2 py-1 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()-1, 1))}>←</button>
-              <h1 className="text-2xl font-bold">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h1>
-              <button className="px-2 py-1 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()+1, 1))}>→</button>
-            </div>
-            <button
-              className="px-4 py-2 rounded bg-blue-600 text-white"
-              onClick={()=>{ setSelectedDate(new Date()); setShowAdd(true); }}
-            >
-              Quick Add
-            </button>
-          </header>
+        <div className="min-h-screen bg-gray-50">
+          {/* Notifications */}
+          {notifications.map(n => (
+            <div key={n.id} className={`notification ${n.type} ${n.show ? 'show' : ''}`}>{n.message}</div>
+          ))}
 
-          {/* Employees Summary */}
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {employees.map(emp => {
-              const used = usedHoursThisYear(emp.id, currentYear);
-              const remaining = Math.max(0, (emp.totalLeave || 0) - used);
-              const pct = (used / Math.max(1,(emp.totalLeave||1))) * 100;
-              const fmt = (h)=> (h%8===0) ? ((h/8)+'d') : (Math.floor(h/8)+'d '+(h%8)+'h');
-              return (
-                <div key={emp.id} className="bg-white rounded-xl border p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{background: emp.color}}>
-                      {emp.name.split(' ').map(w=>w[0]).join('').slice(0,2)}
-                    </div>
-                    <div>
-                      <div className="font-semibold">{emp.name}</div>
-                      <div className="text-sm text-gray-500">{emp.department}</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-                    <div><span className="text-gray-500">Total:</span> <span className="font-medium">{fmt(emp.totalLeave||0)}</span></div>
-                    <div><span className="text-gray-500">Used:</span> <span className="font-medium">{fmt(used)}</span></div>
-                    <div><span className="text-gray-500">Remaining:</span> <span className="font-medium text-green-600">{fmt(remaining)}</span></div>
-                    <div><span className="text-gray-500">Usage:</span> <span className="font-medium">{pct.toFixed(1)}%</span></div>
-                  </div>
-                  <div className="w-full h-2 bg-gray-200 rounded">
-                    <div className="h-2 rounded" style={{width: Math.min(100,pct)+'%', background: emp.color}}></div>
-                  </div>
+          {/* Header */}
+          <div className="bg-white shadow-sm border-b">
+            <div className="max-w-7xl mx:auto md:mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Icon name="calendar" className="h-7 w-7 text-blue-600" />
+                  <h1 className="text-2xl font-bold text-gray-900">Atkin Guitars Leave Calendar</h1>
                 </div>
-              );
-            })}
-          </section>
-
-          {/* Calendar Grid */}
-          <section className="bg-white rounded-xl border">
-            <div className="grid grid-cols-7 gap-1 p-3 text-sm text-gray-500">
-              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1 p-3 pt-0">
-              {days.map((date, idx) => {
-                const inMonth = date.getMonth()===currentDate.getMonth();
-                const isToday = sameDay(date, new Date());
-                const items = entriesForDay(date);
-                // ensure dedup already but filter 0h just in case
-                const filtered = items.filter(x => x.hours > 0);
-                // sort by employee name
-                filtered.sort((a,b)=>{
-                  const ea = employees.find(e=>e.id===a.employeeId)?.name||'';
-                  const eb = employees.find(e=>e.id===b.employeeId)?.name||'';
-                  return ea.localeCompare(eb);
-                });
-                return (
-                  <div key={idx} className={`min-h-[100px] border p-2 rounded ${!inMonth?'bg-gray-50 text-gray-400':''} ${isToday?'bg-red-50 border-red-200':''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className={`text-sm ${isToday?'text-red-600':''}`}>{date.getDate()}</div>
-                      {inMonth && isWorkingDay(date) && (
-                        <button className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center"
-                                onClick={()=>{ setSelectedDate(date); setShowAdd(true); }}>+</button>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      {filtered.map((it, i) => {
-                        const emp = employees.find(e=>e.id===it.employeeId);
-                        if (!emp) return null;
-                        return (
-                          <div key={i} className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 text-center truncate">{firstName(emp.name)}</div>
-                        );
-                      })}
-                      {/* Bank holiday tag */}
-                      {!isWorkingDay(date) && isBankHoliday(date) && (
-                        <div className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800 text-center">Bank Holiday</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Add Modal */}
-          {showAdd && selectedDate && (
-            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-xl p-5 w-full max-w-md">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold">Quick Add Leave — {selectedDate.toLocaleDateString()}</h3>
-                  <button onClick={()=>setShowAdd(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  {['week','month'].map(mode => (
+                    <button key={mode} onClick={() => setViewMode(mode)}
+                      className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                      {mode}
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-3">
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="bg-white rounded-xl shadow-sm border">
+              <div className="flex items-center justify-between p-6 border-b">
+                <div className="flex items-center space-x-4">
+                  <button onClick={() => setCurrentDate(prev => { const nd=new Date(prev); nd.setMonth(prev.getMonth()-1); return nd; })} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+                  <h2 className="text-xl font-semibold text-gray-900">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
+                  <button onClick={() => setCurrentDate(prev => { const nd=new Date(prev); nd.setMonth(prev.getMonth()+1); return nd; })} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                    <div key={d} className="p-3 text-center text-sm font-medium text-gray-500">{d}</div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {days.map((date, idx) => {
+                    const isCurrentMonth = date.getMonth()===currentDate.getMonth();
+                    const isToday = date.toDateString() === new Date().toDateString();
+                    const weekend = isWeekend(date);
+                    const isPink = !isBookableDay(date) && isCurrentMonth;
+                    const chips = chipsForDate(date);
+
+                    return (
+                      <div key={idx}
+                        className={`min-h-[96px] p-2 border border-gray-200 hover:bg-gray-50 transition-colors relative group ${
+                          !isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''} ${isToday ? 'bg-red-50 border-red-200' : ''} ${weekend ? 'bg-gray-100' : ''} ${isPink ? 'bg-red-50 border-red-200' : ''}`}>
+                        <div className="flex justify-between items-start mb-1">
+                          <button onClick={() => openDrawer(date)} className={`text-sm font-medium ${isToday ? 'text-red-600' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'} hover:underline`}>
+                            {date.getDate()}
+                          </button>
+
+                          {isCurrentMonth && isBookableDay(date) && (
+                            <span onClick={() => openQuickFor(date)}
+                              className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          {chips.map(leave => {
+                            const emp = employees.find(e => e.id === leave.employeeId);
+                            if (!emp) return null;
+                            // Show only the first name (name-only chips), no duration
+                            return (
+                              <div key={leave.id} className="text-xs px-2 py-1 rounded text-center truncate bg-green-100 text-green-800">
+                                {compactName(emp.name)}
+                              </div>
+                            );
+                          })}
+                          {isBankHoliday(date) && <div className="text-xs px-2 py-1 rounded text-center truncate bg-purple-100 text-purple-800">Bank Holiday</div>}
+                          {shutdownOnDate(date) && <div className="text-xs px-2 py-1 rounded text-center truncate bg-red-100 text-red-800">Workshop Closed</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Add Modal */}
+          {showQuick && selectedDate && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Quick Add Leave - {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={() => setShowQuick(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">Employee</label>
-                    <select className="w-full border rounded px-3 py-2"
-                            value={form.employeeId}
-                            onChange={(e)=>setForm({...form, employeeId:e.target.value})}>
-                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee</label>
+                    <select value={quick.employeeId} onChange={(e) => setQuick(prev => ({...prev, employeeId: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Employee</option>
+                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                     </select>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2">
-                      <label className="block text-sm text-gray-600 mb-1">Quantity</label>
-                      <input type="number" min="1" className="w-full border rounded px-3 py-2"
-                             value={form.qty} onChange={(e)=>setForm({...form, qty:parseInt(e.target.value||'1',10)})}/>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Unit</label>
-                      <select className="w-full border rounded px-3 py-2"
-                              value={form.unit} onChange={(e)=>setForm({...form, unit:e.target.value})}>
-                        <option value="D">Days</option>
-                        <option value="H">Hours</option>
-                      </select>
-                    </div>
-                  </div>
+
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">Type</label>
-                    <select className="w-full border rounded px-3 py-2"
-                            value={form.type} onChange={(e)=>setForm({...form, type:e.target.value})}>
-                      <option>Annual Leave</option>
-                      <option>In Lieu</option>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Number of Days/Hours</label>
+                    <select value={quick.duration} onChange={(e) => setQuick(prev => ({...prev, duration: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Duration</option>
+                      <optgroup label="Hours">
+                        <option value="H:1">1 Hour</option>
+                        <option value="H:2">2 Hours</option>
+                        <option value="H:3">3 Hours</option>
+                        <option value="H:4">4 Hours (Half Day)</option>
+                        <option value="H:5">5 Hours</option>
+                        <option value="H:6">6 Hours</option>
+                        <option value="H:7">7 Hours</option>
+                      </optgroup>
+                      <optgroup label="Days">
+                        <option value="D:1">1 Day (8 hours)</option>
+                        <option value="D:2">2 Days (16 hours)</option>
+                        <option value="D:3">3 Days (24 hours)</option>
+                        <option value="D:4">4 Days (32 hours)</option>
+                        <option value="D:5">5 Days (40 hours)</option>
+                      </optgroup>
                     </select>
                   </div>
+
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">Start Date</label>
-                    <input type="date" className="w-full border rounded px-3 py-2"
-                           value={selectedDate.toISOString().slice(0,10)}
-                           onChange={(e)=>setSelectedDate(new Date(e.target.value))}/>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
+                    <select value={quick.type} onChange={(e) => setQuick(prev => ({...prev, type: e.target.value}))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select Leave Type</option>
+                      <option value="Annual Leave">Annual Leave</option>
+                      <option value="In Lieu">In Lieu</option>
+                    </select>
                   </div>
-                  <div className="pt-2 flex justify-end gap-2">
-                    <button className="px-4 py-2 rounded border" onClick={()=>setShowAdd(false)}>Cancel</button>
-                    <button className="px-4 py-2 rounded bg-blue-600 text-white"
-                            onClick={()=>addLeave({ ...form, startDate: selectedDate })}>
-                      Add
+
+                  <div className="flex justify-end space-x-3 pt-2">
+                    <button onClick={() => setShowQuick(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button onClick={saveQuickLeave}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                      Add Leave
                     </button>
                   </div>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Day Drawer */}
+          {showDrawer && drawerDate && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={closeDrawer}></div>
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[80vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {drawerDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    {!isWorkingDay(drawerDate) && (
+                      <p className="text-sm text-gray-500">Non-working day</p>
+                    )}
+                  </div>
+                  <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100">
+                    <Icon name="x" className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  {isBookableDay(drawerDate) ? (
+                    <button onClick={() => { setSelectedDate(drawerDate); setShowDrawer(false); setTimeout(()=>setShowQuick(true), 0); }}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                      Add Leave
+                    </button>
+                  ) : (
+                    <span className="text-sm text-gray-500">This day is not bookable</span>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  {(() => {
+                    const items = leavesOnDate(drawerDate);
+                    if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
+                    return items.map(item => {
+                      const emp = employees.find(e => e.id === item.employeeId);
+                      const label = perDayText(item, drawerDate);
+                      return (
+                        <div key={item.id} className="p-3 rounded-lg border border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
+                              <div className="text-sm text-gray-600">{item.type} • {label}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                      onClick={() => removeDateFromBlock(item, drawerDate)}>Exclude this day</button>
+                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                      onClick={async () => { await LocalDB.deleteLeave(item.id); setLeaves(prev => prev.filter(l => l.id !== item.id)); addNotification('Leave removed', 'success'); }}>Delete block</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       );
-    }
+    };
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>

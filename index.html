@@ -500,17 +500,18 @@
             const getLeaveForDate = (date) => {
         const res = [];
 
-        // Regular leave on working days
+        // Regular leave shown only on working days
         if (isWorkingDay(date)) {
           const regs = leaveRequests.filter(l => {
             const s = new Date(l.startDate), e = new Date(l.endDate);
-            return date >= s && date <= e;
+            return date >= s && date <= e && !isExcluded(l, date);
           });
 
+          // Skip 0h rows and de-duplicate by employeeId|start|end|type
           const seen = new Set();
           regs.forEach(l => {
             const hours = l?.hours || 0;
-            if (hours <= 0) return; // skip zero hours
+            if (hours <= 0) return;
             const key = `${l.employeeId}|${new Date(l.startDate).toDateString()}|${new Date(l.endDate).toDateString()}|${l.type || ''}`;
             if (!seen.has(key)) {
               seen.add(key);
@@ -519,7 +520,7 @@
           });
         }
 
-        // Shutdowns
+        // Workshop shutdowns
         const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
         shut.forEach(s => res.push({
           id: `shutdown-${s.id}`,
@@ -606,25 +607,6 @@
           hours: totalHours
         };
 
-
-// Over-allocation guard (only for leave that counts against balance)
-try {
-  const empForCheck = employees.find(e => e.id === newLeave.employeeId);
-  const YEAR = new Date().getFullYear();
-  const usedThisYear = leaveRequests
-    .filter(l => l.employeeId === newLeave.employeeId && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === YEAR)
-    .reduce((sum, l) => sum + (l.hours || 0), 0);
-  const prospective = usedThisYear + (newLeave.type === 'In Lieu' ? 0 : newLeave.hours || 0);
-  const totalAlloc = (empForCheck?.totalLeave || 0);
-  if (prospective > totalAlloc) {
-    const overByH = prospective - totalAlloc;
-    const overLabel = overByH % 8 === 0 ? `${overByH/8}d` : `${overByH}h`;
-    const proceed = confirm(`This booking exceeds the employee's annual allowance by ${overLabel}. Do you want to continue?`);
-    if (!proceed) { addNotification('Booking cancelled', 'error'); return; }
-  }
-} catch(e) { console.warn('over-allocation check failed', e); }
-
-
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
         if (quickLeaveForm.type !== 'In Lieu') {
@@ -632,11 +614,11 @@ try {
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-            (async()=>{try{await dbApi.upsertEmployee(updated);}catch(e){console.error(e);}})();
+            await dbApi.upsertEmployee(updated);
           }
         }
 
-        (async()=>{try{await dbApi.createLeave(newLeave);}catch(e){console.error(e);addNotification('Could not create leave','error');}})();
+        await dbApi.createLeave(newLeave);
         setShowQuickLeaveModal(false);
         addNotification('Leave added', 'success');
       };
@@ -648,7 +630,7 @@ try {
 
         if (editingEmployee) {
           const updated = { ...editingEmployee, name: employeeForm.name, department: employeeForm.department, totalLeave, usedLeave, color: employeeForm.color, avatar: generateInitials(employeeForm.name) };
-          (async()=>{try{await dbApi.upsertEmployee(updated);}catch(e){console.error(e);}})();
+          await dbApi.upsertEmployee(updated);
           setShowEmployeeModal(false);
           setEditingEmployee(null);
           addNotification('Employee updated', 'success');

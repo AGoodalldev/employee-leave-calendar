@@ -1,57 +1,588 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Atkin Guitars Leave Calendar (Patched)</title>
+  <title>Atkin Guitars Leave Calendar — Patched</title>
   <link rel="icon" href="data:,">
+  <!-- React / Tailwind / Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'; }
+    .daycell { min-height: 92px; }
+  </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
-  <script type="text/babel">
-    // Minimal patched skeleton with preserved dbApi calls placeholder
-    const { useState } = React;
-    const isSameDay=(a,b)=>a.toDateString()===b.toDateString();
-    const isWeekend=(d)=>d.getDay()===0||d.getDay()===6;
-    const isWorkingDay=(d)=>!isWeekend(d);
-    const isoDate=(d)=> new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString().slice(0,10);
-    const effectiveHours=(leave,date)=>{
-      if(!leave) return 0;
-      if(Array.isArray(leave.excludedDates)&&leave.excludedDates.includes(isoDate(date))) return 0;
-      const h=leave.hours||0;
-      const s=new Date(leave.startDate), e=new Date(leave.endDate);
-      if(h>0&&h<8) return isSameDay(date,s)?h:0;
-      if(date>=s&&date<=e&&isWorkingDay(date)) return 8;
-      return 0;
+
+  <!-- Firebase v12 (kept) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+    import {
+      getFirestore, enableIndexedDbPersistence,
+      collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD8zcVQBrK_Q_WQZKa856u2ka901eakX0A",
+      authDomain: "atkin-guitars-94dd8.firebaseapp.com",
+      projectId: "atkin-guitars-94dd8",
+      storageBucket: "atkin-guitars-94dd8.appspot.com",
+      messagingSenderId: "501290829079",
+      appId: "1:501290829079:web:e6d21711bccb47654ae352"
     };
-    const firstValidDate=(leave,fromDate=new Date())=>{
-      if(!leave) return null;
-      const s=new Date(leave.startDate), e=new Date(leave.endDate);
-      const cur=new Date(Math.max(+fromDate,+s));
-      while(cur<=e){
-        if(isWorkingDay(cur)&&effectiveHours(leave,cur)>0) return new Date(cur);
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    enableIndexedDbPersistence(db).catch(() => {});
+
+    const ready = new Promise((resolve) => {
+      let done = false;
+      onAuthStateChanged(auth, (user) => { if (user && !done) { done = true; resolve(user); } });
+      signInAnonymously(auth).catch(() => resolve(null));
+    });
+
+    // expose
+    window.__fb = {
+      app, auth, db, ready,
+      api: { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, query, orderBy }
+    };
+  </script>
+
+  <!-- App -->
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    /************ Helpers ************/
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const shortDow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const clone = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    // Easter (Gaussian algorithm) -> Date
+    function easterDate(year){
+      const a = year % 19;
+      const b = Math.floor(year / 100);
+      const c = year % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19 * a + b - d - g + 15) % 30;
+      const i = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2 * e + 2 * i - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const month = Math.floor((h + l - 7 * m + 114) / 31); // 3=March, 4=April
+      const day = ((h + l - 7 * m + 114) % 31) + 1;
+      return new Date(year, month - 1, day);
+    }
+    function firstMonday(year, month){ const d=new Date(year,month,1); while(d.getDay()!==1)d.setDate(d.getDate()+1); return d; }
+    function lastMonday(year, month){ const d=new Date(year,month+1,0); while(d.getDay()!==1)d.setDate(d.getDate()-1); return d; }
+
+    function ukBankHolidays(year){
+      const E = easterDate(year);
+      const goodFri = new Date(E); goodFri.setDate(E.getDate()-2);
+      const easMon = new Date(E); easMon.setDate(E.getDate()+1);
+      return [
+        { name: "New Year's Day", date: new Date(year,0,1) },
+        { name: "Good Friday", date: goodFri },
+        { name: "Easter Monday", date: easMon },
+        { name: "Early May Bank Holiday", date: firstMonday(year,4) },
+        { name: "Spring Bank Holiday", date: lastMonday(year,4) },
+        { name: "Summer Bank Holiday", date: lastMonday(year,7) },
+        { name: "Christmas Day", date: new Date(year,11,25) },
+        { name: "Boxing Day", date: new Date(year,11,26) },
+      ];
+    }
+    const sameDay = (a,b)=> a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    const isWeekend = (d)=> d.getDay()===0 || d.getDay()===6;
+    const isBankHoliday = (d)=> ukBankHolidays(d.getFullYear()).some(h=> sameDay(h.date, d));
+    const isWorkingDay = (d)=> !isWeekend(d) && !isBankHoliday(d);
+    const iso = (d)=> new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString().slice(0,10);
+
+    function nextWorkingDay(d){
+      const x = clone(d);
+      while(!isWorkingDay(x)) x.setDate(x.getDate()+1);
+      return x;
+    }
+
+    function addWorkingDays(start, n){
+      let d = nextWorkingDay(start);
+      if(n<=1) return d;
+      let remaining = n-1;
+      while(remaining>0){
+        d.setDate(d.getDate()+1);
+        if(isWorkingDay(d)) remaining--;
+      }
+      return d;
+    }
+
+    // hours contributed by a leave to a specific calendar date, respecting exclusions
+    function effectiveHours(leave, date){
+      const h = leave.hours || 0;
+      const S = new Date(leave.startDate), E = new Date(leave.endDate);
+      const ex = Array.isArray(leave.excludedDates) ? leave.excludedDates : [];
+      if(ex.includes(iso(date))) return 0;
+      if(h>0 && h<8) return sameDay(date, S) ? h : 0; // hours on the start day only
+      if(date < S || date > E) return 0;
+      return isWorkingDay(date) ? 8 : 0;
+    }
+
+    // compact length for cards and summaries (NOT shown in day chips)
+    function lengthShortFromHours(h){
+      if(h<=0) return "0d";
+      if(h%8===0) return (h/8)+ "d";
+      return h + "h";
+    }
+
+    // first usable date within a leave from 'fromDate'
+    function firstUsableDate(leave, fromDate = new Date()){
+      const S = new Date(leave.startDate), E = new Date(leave.endDate);
+      const cur = new Date(Math.max(+S, +new Date(fromDate.getFullYear(),fromDate.getMonth(),fromDate.getDate())));
+      while(cur <= E){
+        if(effectiveHours(leave, cur) > 0) return new Date(cur);
         cur.setDate(cur.getDate()+1);
       }
       return null;
-    };
-    const dbApi = { createLeaveRequest: async()=>{}, deleteLeaveRequest: async()=>{} };
-    const App=()=>{
-      const [leaveRequests] = useState([]);
-      const nextUpcomingFor=(empId)=>{
-        const today=new Date(), t0=new Date(today.getFullYear(),today.getMonth(),today.getDate());
-        const candidates=leaveRequests
-          .filter(l=>l.employeeId===empId)
-          .map(l=>({leave:l,next:firstValidDate(l,t0)}))
-          .filter(x=>!!x.next)
-          .sort((a,b)=>a.next-b.next);
-        return candidates.length?{...candidates[0].leave,_nextDate:candidates[0].next}:null;
+    }
+
+    /************ Firestore-backed API (kept) ************/
+    class DatabaseAPI{
+      constructor(){ this.fb = window.__fb || {}; this.db = this.fb.db; this.api = this.fb.api || {}; this.unsubs = {}; }
+
+      _toDate(v){ if(!v) return null; if(v.toDate) return v.toDate(); if(typeof v === 'string') return new Date(v); return v; }
+
+      subscribeEmployees(setter){
+        if(!this.db) return ()=>{};
+        const { collection, onSnapshot, query, orderBy } = this.api;
+        const q = query(collection(this.db, "employees"), orderBy("name"));
+        this.unsubs.emp?.();
+        this.unsubs.emp = onSnapshot(q, snap => setter(snap.docs.map(d=> d.data())));
+        return this.unsubs.emp;
+      }
+
+      subscribeLeaves(setter){
+        if(!this.db) return ()=>{};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "leave_requests");
+        this.unsubs.leaves?.();
+        this.unsubs.leaves = onSnapshot(ref, snap => {
+          const rows = snap.docs.map(d => { const v=d.data(); return { id:v.id ?? d.id, ...v, startDate:this._toDate(v.startDate), endDate:this._toDate(v.endDate)}; });
+          setter(rows);
+        });
+        return this.unsubs.leaves;
+      }
+
+      subscribeShutdowns(setter){
+        if(!this.db) return ()=>{};
+        const { collection, onSnapshot } = this.api;
+        const ref = collection(this.db, "workshop_shutdowns");
+        this.unsubs.sd?.();
+        this.unsubs.sd = onSnapshot(ref, snap => {
+          const rows = snap.docs.map(d => { const v=d.data(); return { id:v.id ?? d.id, ...v, startDate:this._toDate(v.startDate), endDate:this._toDate(v.endDate)}; });
+          setter(rows);
+        });
+        return this.unsubs.sd;
+      }
+
+      // CRUD
+      createLeave(leave){
+        if(!this.db){
+          const arr = JSON.parse(localStorage.getItem('atkin_leave_requests')||'[]');
+          arr.push({ ...leave, id: "local-"+Date.now() });
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr));
+          return Promise.resolve();
+        }
+        const { collection, doc, setDoc } = this.api;
+        const ref = doc(collection(this.db, "leave_requests"));
+        return setDoc(ref, { ...leave, id: ref.id });
+      }
+      updateLeave(id, partial){
+        if(!this.db){
+          const arr = JSON.parse(localStorage.getItem('atkin_leave_requests')||'[]');
+          const i = arr.findIndex(r=> r.id===id);
+          if(i>=0) arr[i] = { ...arr[i], ...partial };
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr));
+          return Promise.resolve();
+        }
+        const { doc, setDoc } = this.api;
+        return setDoc(doc(this.db, "leave_requests", String(id)), partial, { merge:true });
+      }
+      deleteLeave(id){
+        if(!this.db){
+          const arr = JSON.parse(localStorage.getItem('atkin_leave_requests')||'[]').filter(r=> r.id!==id);
+          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr));
+          return Promise.resolve();
+        }
+        const { doc, deleteDoc } = this.api;
+        return deleteDoc(doc(this.db, "leave_requests", String(id)));
+      }
+
+      upsertEmployee(emp){
+        if(!this.db){
+          const arr = JSON.parse(localStorage.getItem('atkin_employees')||'[]');
+          const i = arr.findIndex(e=> e.id===emp.id);
+          if(i>=0) arr[i]=emp; else arr.push(emp);
+          localStorage.setItem('atkin_employees', JSON.stringify(arr));
+          return Promise.resolve();
+        }
+        const { doc, setDoc } = this.api;
+        return setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge:true });
+      }
+
+      // Fetch (used if no live listeners available yet)
+      async fetchEmployees(){
+        if(!this.db){
+          return [
+            { id: 1, name: 'Andy Goodall', department: 'CNC', totalLeave: 128, usedLeave: 0, color:'#10B981', avatar:'AG' },
+          ];
+        }
+        const { collection, getDocs, query, orderBy } = this.api;
+        const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
+        return snap.docs.map(d=> d.data());
+      }
+      async fetchLeaves(){
+        if(!this.db){
+          return [];
+        }
+        const { collection, getDocs } = this.api;
+        const snap = await getDocs(collection(this.db, "leave_requests"));
+        return snap.docs.map(d=> { const v=d.data(); return { id:v.id ?? d.id, ...v, startDate:this._toDate(v.startDate), endDate:this._toDate(v.endDate)}; });
+      }
+      async fetchShutdowns(){
+        if(!this.db){ return []; }
+        const { collection, getDocs } = this.api;
+        const snap = await getDocs(collection(this.db, "workshop_shutdowns"));
+        return snap.docs.map(d=> { const v=d.data(); return { id:v.id ?? d.id, ...v, startDate:this._toDate(v.startDate), endDate:this._toDate(v.endDate)}; });
+      }
+    }
+
+    /************ UI ************/
+    function App(){
+      const [date, setDate] = useState(new Date());
+      const [employees, setEmployees] = useState([]);
+      const [leaves, setLeaves] = useState([]);
+      const [shutdowns, setShutdowns] = useState([]);
+      const [showQuick, setShowQuick] = useState(false);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [form, setForm] = useState({ employeeId:"", duration:"", type:"" });
+      const [drawer, setDrawer] = useState({ open:false, date:null });
+
+      const db = useMemo(()=> new DatabaseAPI(), []);
+
+      useEffect(()=>{
+        let u1=null,u2=null,u3=null, mounted=true;
+        (async () => {
+          if(window.__fb?.ready) await window.__fb.ready;
+          if(window.__fb?.db){
+            u1 = db.subscribeEmployees(setEmployees);
+            u2 = db.subscribeLeaves(setLeaves);
+            u3 = db.subscribeShutdowns(setShutdowns);
+          }else{
+            const [e,l,s] = await Promise.all([db.fetchEmployees(), db.fetchLeaves(), db.fetchShutdowns()]);
+            if(!mounted) return;
+            setEmployees(e); setLeaves(l); setShutdowns(s);
+          }
+        })();
+        return ()=>{ mounted=false; u1?.(); u2?.(); u3?.(); };
+      }, [db]);
+
+      // grid
+      const days = useMemo(()=>{
+        const y=date.getFullYear(), m=date.getMonth();
+        const first = new Date(y,m,1);
+        const start = new Date(y,m,1-first.getDay());
+        return Array.from({length:42},(_,i)=> new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
+      }, [date]);
+
+      const isShutdownDay = (d)=> shutdowns.some(s=> clone(d) >= clone(new Date(s.startDate)) && clone(d) <= clone(new Date(s.endDate)));
+      const isBookableDay = (d)=> isWorkingDay(d) && !isShutdownDay(d);
+
+      // used hours for a given employee in current year (ignoring "In Lieu")
+      const usedHoursThisYear = (empId)=>{
+        const Y = new Date().getFullYear();
+        return leaves
+          .filter(l => l.employeeId===empId && l.type!=='In Lieu' && new Date(l.startDate).getFullYear()===Y)
+          .reduce((sum,l)=>{
+            // sum per-day effective hours
+            let cur = clone(new Date(l.startDate));
+            const end = clone(new Date(l.endDate));
+            while(cur <= end){
+              sum += effectiveHours(l, cur);
+              cur.setDate(cur.getDate()+1);
+            }
+            return sum;
+          }, 0);
       };
-      return <div>Calendar Placeholder (patched build)</div>;
-    };
+
+      // add leave (with over-allocation popup; async-free using promises)
+      const saveQuickLeave = () => {
+        if(!form.employeeId || !form.duration || !form.type){ alert('Please complete all fields'); return; }
+        const emp = employees.find(e=> String(e.id)===String(form.employeeId));
+        if(!emp){ alert('Please select a valid employee'); return; }
+
+        // parse duration
+        const [unit, nstr] = String(form.duration).split(':');
+        const n = Math.max(1, parseInt(nstr||'1',10));
+        const isHours = unit === 'H';
+        const start = nextWorkingDay(selectedDate || new Date());
+        const end = isHours ? clone(start) : addWorkingDays(start, n);
+        const hours = isHours ? n : n*8;
+
+        // Over-allocation check
+        const used = usedHoursThisYear(emp.id);
+        const total = emp.totalLeave || 0;
+        const wouldUse = used + (form.type==='In Lieu' ? 0 : hours);
+        if(wouldUse > total){
+          const deficit = wouldUse-total;
+          if(!confirm(`${emp.name} will exceed their balance by ${lengthShortFromHours(deficit)}. Continue?`)){
+            return;
+          }
+        }
+
+        const newLeave = {
+          id: undefined,
+          employeeId: parseInt(form.employeeId,10),
+          startDate: start, endDate: end,
+          type: form.type, status:'approved',
+          hours, excludedDates: []
+        };
+
+        // optimistic UI
+        setLeaves(prev=> [...prev, { ...newLeave, id: "tmp-"+Date.now() }]);
+        db.createLeave(newLeave).then(()=>{
+          // ok
+        }).catch((e)=>{
+          alert('Failed to save: '+ e.message);
+        });
+
+        setShowQuick(false);
+      };
+
+      const openDay = (d)=> setDrawer({ open:true, date: d });
+      const closeDay = ()=> setDrawer({ open:false, date:null });
+
+      const dayItems = (d)=>{
+        // returns deduped items for display in calendar cells; skip 0h days
+        const byEmp = new Map();
+        leaves.forEach(l=>{
+          const h = effectiveHours(l, d);
+          if(h<=0) return;
+          if(d < new Date(l.startDate) || d > new Date(l.endDate)) return;
+          const key = l.employeeId;
+          if(!byEmp.has(key)){
+            byEmp.set(key, { ...l });
+          }
+        });
+        // also add shutdowns and bank holidays
+        if(isShutdownDay(d)) byEmp.set('sd-'+iso(d), { id:'sd-'+iso(d), isShutdown:true, name:'Workshop Closed' });
+        if(isBankHoliday(d)) byEmp.set('bh-'+iso(d), { id:'bh-'+iso(d), isBankHoliday:true, name:'Bank Holiday' });
+        return Array.from(byEmp.values());
+      };
+
+      // exclude a single day from a block
+      const excludeDay = (leave, d)=>{
+        const dateStr = iso(d);
+        const ex = Array.isArray(leave.excludedDates) ? leave.excludedDates.slice() : [];
+        if(ex.includes(dateStr)) return;
+        ex.push(dateStr);
+        setLeaves(prev=> prev.map(x=> x.id===leave.id ? { ...x, excludedDates: ex } : x));
+        db.updateLeave(leave.id, { excludedDates: ex });
+      };
+
+      const removeLeave = (leave)=>{
+        if(!confirm('Delete this leave?')) return;
+        setLeaves(prev=> prev.filter(x=> x.id!==leave.id));
+        db.deleteLeave(leave.id);
+      };
+
+      const openQuickFor = (d)=>{
+        if(!isBookableDay(d)){
+          alert('Non-bookable day (weekend, bank holiday or shutdown).');
+          return;
+        }
+        setSelectedDate(d);
+        setForm({ employeeId:"", duration:"", type:"" });
+        setShowQuick(true);
+      };
+
+      // rendering
+      return (
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <button className="px-2 py-1 rounded hover:bg-gray-100" onClick={()=> setDate(d=> new Date(d.getFullYear(), d.getMonth()-1, 1))}>←</button>
+              <h1 className="text-2xl font-bold">{monthNames[date.getMonth()]} {date.getFullYear()}</h1>
+              <button className="px-2 py-1 rounded hover:bg-gray-100" onClick={()=> setDate(d=> new Date(d.getFullYear(), d.getMonth()+1, 1))}>→</button>
+            </div>
+            <button
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+              onClick={()=> openQuickFor(new Date())}
+            >
+              Quick Add
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {shortDow.map(d => <div key={d} className="text-center text-sm text-gray-500 py-2">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {days.map((d, idx)=>{
+              const curMonth = d.getMonth()===date.getMonth();
+              const today = sameDay(d, new Date());
+              const weekend = isWeekend(d);
+              const items = dayItems(d);
+              return (
+                <div key={idx}
+                     className={"daycell p-2 border rounded "+(curMonth? "bg-white":"bg-gray-50 text-gray-400")+" "+(weekend?"bg-gray-100":"")+" "+(today?"bg-red-50 border-red-200":"")}>
+                  <div className="flex items-start justify-between mb-1">
+                    <button className={"text-sm font-medium "+(today?"text-red-600":curMonth?"text-gray-900":"text-gray-400")}
+                            onClick={()=> openDay(d)}>
+                      {d.getDate()}
+                    </button>
+                    {curMonth && isBookableDay(d) && (
+                      <button onClick={()=> openQuickFor(d)} className="w-5 h-5 text-xs flex items-center justify-center rounded-full bg-blue-600 text-white">+</button>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {items.map((it, i)=>{
+                      if(it.isShutdown) return <div key={'sd'+i} className="text-[10px] text-center px-2 py-1 rounded bg-red-100 text-red-800">Workshop Closed</div>;
+                      if(it.isBankHoliday) return <div key={'bh'+i} className="text-[10px] text-center px-2 py-1 rounded bg-purple-100 text-purple-800">Bank Holiday</div>;
+                      const emp = employees.find(e=> e.id===it.employeeId);
+                      if(!emp) return null;
+                      return (
+                        <div key={it.id||i} title={it.type}
+                             className="text-[11px] px-2 py-1 rounded bg-green-100 text-green-800 text-center truncate">
+                          {emp.name.split(' ')[0]}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick modal */}
+          {showQuick && selectedDate && (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Quick Add — {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={()=> setShowQuick(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm mb-1">Employee</label>
+                    <select className="w-full border rounded px-3 py-2" value={form.employeeId} onChange={e=> setForm(f=>({...f, employeeId:e.target.value}))}>
+                      <option value="">Select employee</option>
+                      {employees.map(e=> <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Duration</label>
+                    <select className="w-full border rounded px-3 py-2" value={form.duration} onChange={e=> setForm(f=>({...f, duration:e.target.value}))}>
+                      <optgroup label="Hours">
+                        <option value="H:4">4 Hours (Half Day)</option>
+                        <option value="H:1">1 Hour</option>
+                        <option value="H:2">2 Hours</option>
+                        <option value="H:3">3 Hours</option>
+                        <option value="H:5">5 Hours</option>
+                        <option value="H:6">6 Hours</option>
+                        <option value="H:7">7 Hours</option>
+                      </optgroup>
+                      <optgroup label="Days">
+                        <option value="D:1">1 Day</option>
+                        <option value="D:2">2 Days</option>
+                        <option value="D:3">3 Days</option>
+                        <option value="D:4">4 Days</option>
+                        <option value="D:5">5 Days</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Type</label>
+                    <select className="w-full border rounded px-3 py-2" value={form.type} onChange={e=> setForm(f=>({...f, type:e.target.value}))}>
+                      <option value="">Select type</option>
+                      <option value="Annual Leave">Annual Leave</option>
+                      <option value="In Lieu">In Lieu</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button className="px-4 py-2 rounded border" onClick={()=> setShowQuick(false)}>Cancel</button>
+                  <button className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={saveQuickLeave}>Add Leave</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Day Drawer */}
+          {drawer.open && drawer.date && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={closeDay}></div>
+              <div className="absolute bottom-0 left-0 right-0 bg-white p-4 rounded-t-2xl shadow-xl max-h-[80vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold">
+                    {drawer.date.toLocaleDateString(undefined,{ weekday:'long', year:'numeric', month:'long', day:'numeric' })}
+                  </h3>
+                  <button onClick={closeDay} className="p-2 rounded hover:bg-gray-100">✕</button>
+                </div>
+
+                {/* list */}
+                <div className="space-y-3">
+                  {(() => {
+                    const items = dayItems(drawer.date);
+                    if(items.length===0) return <div className="text-sm text-gray-500">No entries.</div>;
+                    return items.map((it, idx)=>{
+                      if(it.isShutdown){
+                        return <div key={'sd'+idx} className="p-3 border rounded bg-red-50 text-red-800">Workshop closed</div>;
+                      }
+                      if(it.isBankHoliday){
+                        return <div key={'bh'+idx} className="p-3 border rounded bg-purple-50 text-purple-800">Bank Holiday</div>;
+                      }
+                      const emp = employees.find(e=> e.id===it.employeeId);
+                      const eh = effectiveHours(it, drawer.date);
+                      return (
+                        <div key={it.id} className="p-3 border rounded">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">{emp?.name || "Employee"}</div>
+                              <div className="text-sm text-gray-600">
+                                {it.type} • {eh===8 ? "Full Day" : (eh>0 ? (eh+"h") : "0h")}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              {eh>0 && (it.hours>=8 || it.endDate>it.startDate) && (
+                                <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                        onClick={()=> excludeDay(it, drawer.date)}>
+                                  Exclude this day
+                                </button>
+                              )}
+                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                      onClick={()=> removeLeave(it)}>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
   </script>
 </body>

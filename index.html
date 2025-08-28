@@ -404,7 +404,7 @@
       const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
       const nextWorkingDay = (date) => {
         const d = new Date(date);
-        while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
+        while (!isBookableDay(d)) d.setDate(d.getDate() + 1);
         return d;
       };
       const addWorkingDays = (start, days) => {
@@ -413,10 +413,20 @@
         let remaining = days - 1;
         while (remaining > 0) {
           d.setDate(d.getDate() + 1);
-          if (isWorkingDay(d)) remaining--;
+          if (isBookableDay(d)) remaining--;
         }
         return d;
       };
+      // Utils: ISO date, exclusions, shutdowns, and bookable day
+      const isoDate = (d) => new Date(d).toISOString().slice(0,10);
+      const isExcluded = (leave, date) => Array.isArray(leave.excludedDates) && leave.excludedDates.includes(isoDate(date));
+      const isShutdownDate = (date) => {
+        const d = new Date(date);
+        return workshopShutdowns.some(s => d >= new Date(s.startDate) && d <= new Date(s.endDate));
+      };
+      // Bookable day = working day (no weekend/bank holiday) AND not a shutdown
+      const isBookableDay = (date) => isWorkingDay(date) && !isShutdownDate(date);
+
 
       // Quick leave form with placeholders
       const [quickLeaveForm, setQuickLeaveForm] = useState({
@@ -424,7 +434,6 @@
         duration: "", // "D:n" or "H:n"
         type: ""
       });
-      const [isSavingQuick, setIsSavingQuick] = useState(false);
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
@@ -432,7 +441,7 @@
       // small/long labels for leave length
       const lengthShort = (leave) => {
         const h = leave.hours || 0;
-        if (h === 8) return 'day';
+        if (h === 8) return '1d';
         if (h % 8 === 0) return `${h/8}d`;
         return `${h}h`;
       };
@@ -488,13 +497,13 @@
       };
 
       // Only show leave on working days; include shutdowns & bank holidays separately
-      const getLeaveForDate = (date) => {
+            const getLeaveForDate = (date) => {
         const regs = leaveRequests.filter(l => {
           const s = new Date(l.startDate), e = new Date(l.endDate);
-          return date >= s && date <= e && isWorkingDay(date);
+          if (!(date >= s && date <= e && isWorkingDay(date))) return false;
+          return !isExcluded(l, date);
         });
-
-        const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
+const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date <= new Date(s.endDate));
         const res = [...regs];
 
         shut.forEach(s => res.push({
@@ -545,77 +554,39 @@
       }, [dbApi]);
 
       // ---------- ACTIONS ----------
-      
-const saveQuickLeave = async () => {
-  if (isSavingQuick) return;              // prevent double submits
-  setIsSavingQuick(true);
-  try {
-    // Validate
-    if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
-      addNotification('Please complete all fields', 'error');
-      return;
-    }
+      const saveQuickLeave = async () => {
+        if (!isBookableDay(selectedDate)) {
+          addNotification('You can only book leave on working days (no weekends, bank holidays or shutdowns).', 'error');
+          return;
+        }
+        if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
+          addNotification('Please complete all fields', 'error');
+          return;
+        }
 
-    const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
-    if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
+        const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
+        if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-    // Parse duration
-    const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
-    const n = Math.max(1, parseInt(valueStr || '1'));
-    const isHours = unit === 'H';
+        const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
+        const n = Math.max(1, parseInt(valueStr || '1'));
+        const isHours = unit === 'H';
 
-    // Determine start day aligned to next working day from the selected date
-    let start = nextWorkingDay(new Date(selectedDate));
-    let end   = isHours ? new Date(start) : addWorkingDays(start, n);
-    const totalHours = isHours ? n : n * 8;
+        let start = nextWorkingDay(new Date(selectedDate));
+        let end   = new Date(start);
 
-    // Over-allocation confirmation
-    const empIdInt = parseInt(quickLeaveForm.employeeId);
-    if (!confirmLeaveOverage(empIdInt, totalHours, quickLeaveForm.type)) {
-      addNotification('Booking cancelled', 'error');
-      return;
-    }
+        if (!isHours) {
+          end = addWorkingDays(start, n);
+        }
+        const totalHours = isHours ? n : n * 8;
 
-    const newLeave = {
-      employeeId: empIdInt,
-      startDate: start,
-      endDate: end,
-      type: quickLeaveForm.type,
-      status: 'approved',
-      hours: totalHours
-    };
-
-    // ✅ Optimistic add ONLY in offline mode
-    if (!window.__fb?.db) {
-      setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
-    }
-
-    // Update employee usedLeave locally for display (skip In Lieu)
-    if (quickLeaveForm.type !== 'In Lieu') {
-      const changed = employees.find(e => e.id === newLeave.employeeId);
-      if (changed) {
-        const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
-        setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-
-(async () => {
-  try {
-    await dbApi.upsertEmployee(updated);
-  } catch (err) {
-    console.error("Failed to update employee in DB", err);
-  }
-})();
-
-}
-    }
-
-    await dbApi.createLeave(newLeave);
-    setShowQuickLeaveModal(false);
-    addNotification('Leave added', 'success');
-  } finally {
-    setIsSavingQuick(false);
-  }
-};
-
+        const newLeave = {
+          employeeId: parseInt(quickLeaveForm.employeeId),
+          startDate: start,
+          endDate: end,
+          type: quickLeaveForm.type,
+          status: 'approved',
+          hours: totalHours
+        };
 
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
@@ -624,20 +595,19 @@ const saveQuickLeave = async () => {
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+            await dbApi.upsertEmployee(updated);
+          }
+        }
 
 (async () => {
   try {
-    await dbApi.upsertEmployee(updated);
+    await dbApi.createLeave(newLeave);
   } catch (err) {
-    console.error("Failed to update employee in DB", err);
+    console.error("Failed to create leave", err);
   }
 })();
 
-}
-        }
-
-        await dbApi.createLeave(newLeave);
-        setShowQuickLeaveModal(false);
+setShowQuickLeaveModal(false);
         addNotification('Leave added', 'success');
       };
 
@@ -724,7 +694,27 @@ const saveQuickLeave = async () => {
         });
       };
 
-      const saveEditedLeave = async () => {
+      
+      // Remove a single day from a block: if it's a multi-day block, add to excludedDates; otherwise delete.
+      const excludeSingleDay = async (leave, date) => {
+        const dayIso = isoDate(date);
+        const isBlock = (new Date(leave.startDate).toDateString() !== new Date(leave.endDate).toDateString()) || (leave.hours || 0) >= 8;
+        if (!isBlock) {
+          if (confirm(`Delete ${leave.type} for this day?`)) {
+            await dbApi.deleteLeaveRequest(leave.id);
+            setLeaveRequests(prev => prev.filter(x => x.id !== leave.id));
+            addNotification('Leave removed', 'success');
+          }
+          return;
+        }
+        const current = Array.isArray(leave.excludedDates) ? leave.excludedDates.slice() : [];
+        if (current.includes(dayIso)) return;
+        const updated = { ...leave, excludedDates: [...current, dayIso] };
+        setLeaveRequests(prev => prev.map(x => x.id === leave.id ? updated : x));
+        await dbApi.updateLeave(leave.id, { excludedDates: updated.excludedDates });
+        addNotification('Day removed from block', 'success');
+      };
+const saveEditedLeave = async () => {
         if (!editingLeave) return;
         const [unit, valueStr] = String(editLeaveForm.duration).split(':');
         const n = Math.max(1, parseInt(valueStr || '1'));
@@ -756,19 +746,58 @@ const saveQuickLeave = async () => {
       const addEnabled = quickLeaveForm.employeeId && quickLeaveForm.duration && quickLeaveForm.type;
       const currentYear = new Date().getFullYear();
 
-      const usedHoursThisYearFor = (empId) =>
-        leaveRequests
-          .filter(l => l.employeeId === empId && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === currentYear)
-          .reduce((sum, l) => sum + (l.hours || 0), 0);
+      
+      const usedHoursThisYearFor = (empId) => {
+        const year = currentYear;
+        let total = 0;
+        for (const l of leaveRequests) {
+          if (l.employeeId !== empId || l.type === 'In Lieu') continue;
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+          // Hour entries (< 8h) – count if in this year
+          if ((l.hours || 0) > 0 && (l.hours || 0) < 8) {
+            if (s.getFullYear() === year) total += (l.hours || 0);
+            continue;
+          }
+          // Day-style: count actual working days in this year, minus exclusions
+          const from = new Date(Math.max(new Date(year,0,1), s));
+          const to   = new Date(Math.min(new Date(year,11,31), e));
+          for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+            const day = new Date(d);
+            if (isWorkingDay(day) && !isExcluded(l, day)) total += 8;
+          }
+        }
+        return total;
+      };
 
+
+      
       const nextUpcomingFor = (empId) => {
         const today = new Date();
         const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const sorted = leaveRequests
-          .filter(l => l.employeeId === empId && new Date(l.startDate) >= t0)
+        const candidates = leaveRequests
+          .filter(l => l.employeeId === empId && new Date(l.endDate) >= t0)
           .sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
-        return sorted[0] || null;
+
+        for (const l of candidates) {
+          const s = new Date(l.startDate);
+          const e = new Date(l.endDate);
+          // If it's hours-only (<8h) on or after today, return it
+          if ((l.hours || 0) > 0 && (l.hours || 0) < 8) {
+            if (s >= t0) return l;
+            continue;
+          }
+          const from = s < t0 ? t0 : s;
+          for (let d = new Date(from); d <= e; d.setDate(d.getDate() + 1)) {
+            const day = new Date(d);
+            if (isWorkingDay(day) && !isExcluded(l, day)) {
+              return { ...l, startDate: day };
+            }
+          }
+        }
+        return null;
       };
+
 
       return (
         <div className="min-h-screen bg-gray-50">
@@ -860,18 +889,30 @@ const saveQuickLeave = async () => {
                   {viewMode === 'year' ? (
                     <div className={`grid ${getGridColumns()} gap-4`}>
                       {getCalendarDays().map((month, idx) => {
-                        const monthLeaves = leaveRequests.filter(leave => {
-                          const s = new Date(leave.startDate);
-                          return s.getMonth() === month.getMonth() && s.getFullYear() === month.getFullYear();
-                        });
+                        
+                        // Count effective working days in this month per employee (respects exclusions & cross-month spans)
+                        const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+                        const monthEnd   = new Date(month.getFullYear(), month.getMonth()+1, 0);
                         const map = new Map();
-                        monthLeaves.forEach(leave => {
-                          const id = leave.employeeId;
-                          if (map.has(id)) map.get(id).totalDays += (leave.hours/8);
-                          else map.set(id, { employeeId:id, status: leave.status, totalDays:(leave.hours/8) });
+
+                        leaveRequests.forEach(leave => {
+                          const s = new Date(leave.startDate);
+                          const e = new Date(leave.endDate);
+                          if (e < monthStart || s > monthEnd) return; // no overlap
+                          const from = new Date(Math.max(monthStart, s));
+                          const to   = new Date(Math.min(monthEnd, e));
+                          for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+                            const day = new Date(d);
+                            if (isWorkingDay(day) && !isExcluded(leave, day)) {
+                              const id = leave.employeeId;
+                              if (map.has(id)) map.get(id).totalDays += 1;
+                              else map.set(id, { employeeId: id, status: leave.status, totalDays: 1 });
+                            }
+                          }
                         });
+
                         const unique = Array.from(map.values());
-                        return (
+return (
                           <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
                                onClick={() => { setCurrentDate(month); setViewMode('month'); }}>
                             <h3 className="font-medium text-gray-900 mb-2">{monthNames[month.getMonth()]}</h3>
@@ -920,7 +961,7 @@ const saveQuickLeave = async () => {
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </button>
 
-                                {isCurrentMonth && isWorkingDay(date) && (
+                                {isCurrentMonth && isBookableDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
                                     setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
@@ -941,13 +982,8 @@ const saveQuickLeave = async () => {
                                   if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
-                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70"></span></span>
-                                      <button onClick={async () => {
-                                        if (confirm(`Cancel leave for ${employee?.name}?`)) {
-                                          await dbApi.deleteLeaveRequest(leave.id);
-                                          addNotification('Leave removed', 'success');
-                                        }
-                                      }} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]}</span>
+                                      <button onClick={() => excludeSingleDay(leave, date)} className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 hover:bg-red-200 rounded" title="Delete">
                                         <Icon name="x" className="h-2 w-2" />
                                       </button>
                                     </div>
@@ -1092,9 +1128,7 @@ const saveQuickLeave = async () => {
                     const usagePercentage = (usedThisYear / (employee.totalLeave || 1)) * 100;
                     const upcoming = nextUpcomingFor(employee.id);
                     const upcomingLenHours = upcoming ? (upcoming.hours || 0) : 0;
-                    const upcomingLenLabel = upcomingLenHours === 8
-                      ? '1 day'
-                      : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8} days` : `${upcomingLenHours} hours`);
+                    const upcomingLenLabel = upcomingLenHours === 8 ? '1d' : (upcomingLenHours % 8 === 0 ? `${upcomingLenHours/8}d` : `${upcomingLenHours}h`);
 
                     return (
                       <div key={employee.id}
@@ -1335,7 +1369,9 @@ const saveQuickLeave = async () => {
     // open the modal on the next tick (after the drawer collapses)
     setTimeout(() => setShowQuickLeaveModal(true), 0);
   }}
-  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+  className={`px-3 py-2 rounded-md text-white ${isBookableDay(drawerDate) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"}`}
+  disabled={!isBookableDay(drawerDate)}
+  title={isBookableDay(drawerDate) ? "Add leave" : "Cannot add leave on non-working day"}
 >
   Add Leave
 </button>
@@ -1375,12 +1411,7 @@ const saveQuickLeave = async () => {
                               <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
                                       onClick={() => startEditLeave(item)}>Edit</button>
                               <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
-                                      onClick={async () => {
-                                        if (confirm('Delete this leave?')) {
-                                          await dbApi.deleteLeaveRequest(item.id);
-                                          addNotification('Leave removed', 'success');
-                                        }
-                                      }}>Delete</button>
+                                      onClick={() => excludeSingleDay(item, drawerDate)}>Delete</button>
                             </div>
                           </div>
 
@@ -1417,7 +1448,7 @@ const saveQuickLeave = async () => {
                                       <option value="H:1">1 Hour</option>
                                       <option value="H:2">2 Hours</option>
                                       <option value="H:3">3 Hours</option>
-                                      <option value="H:4">4 Hours</option>
+                                      <option value="H:4">4 Hours (Half Day)</option>
                                       <option value="H:5">5 Hours</option>
                                       <option value="H:6">6 Hours</option>
                                       <option value="H:7">7 Hours</option>

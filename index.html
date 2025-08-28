@@ -416,7 +416,31 @@
       // Hours of a leave considering working days, shutdowns and exclusions
       
       // Hours of a leave limited to a date range (inclusive)
-      const hoursInRange = (leave, rangeStart, rangeEnd) => {
+      
+      // --- Upcoming helpers ---
+      const nextActiveDate = (leave, fromDate) => {
+        const s = new Date(leave.startDate);
+        const e = new Date(leave.endDate);
+        const start = new Date(Math.max(s, fromDate));
+        for (let d = new Date(start); d <= e; d.setDate(d.getDate() + 1)) {
+          const day = new Date(d);
+          if (isBookableDay(day) && !isExcluded(leave, day)) return day;
+        }
+        return null;
+      };
+
+      const nextUpcomingFor = (empId) => {
+        const today = new Date();
+        const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        let best = null, bestDate = null;
+        leaveRequests.filter(l => l.employeeId === empId).forEach(l => {
+          const d = nextActiveDate(l, t0);
+          if (!d) return;
+          if (!bestDate || d < bestDate) { best = l; bestDate = d; }
+        });
+        return best ? { ...best, __nextDate: bestDate } : null;
+      };
+const hoursInRange = (leave, rangeStart, rangeEnd) => {
         const h = leave.hours || 0;
         const s  = new Date(leave.startDate);
         const e  = new Date(leave.endDate);
@@ -1338,7 +1362,7 @@ const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
                   {(() => {
                     const items = getLeaveForDate(drawerDate);
                     if (items.length === 0) return <div className="text-sm text-gray-500">No entries.</div>;
-                    return items.map(item => {
+                    return items.filter(item => (item.isShutdown||item.isBankHoliday) ? true : (typeof effectiveHours==='function' ? effectiveHours(item) > 0 : ((item.hours||0)>0))).map(item => {
                       if (item.isShutdown) {
                         return (
                           <div key={item.id} className="p-3 rounded-lg bg-red-50 border border-red-100">

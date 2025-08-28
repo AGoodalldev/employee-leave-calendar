@@ -596,8 +596,16 @@ const saveQuickLeave = async () => {
       if (changed) {
         const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
         setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-        await dbApi.upsertEmployee(updated);
-      }
+
+(async () => {
+  try {
+    await dbApi.upsertEmployee(updated);
+  } catch (err) {
+    console.error("Failed to update employee in DB", err);
+  }
+})();
+
+}
     }
 
     await dbApi.createLeave(newLeave);
@@ -616,8 +624,16 @@ const saveQuickLeave = async () => {
           if (changed) {
             const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
             setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-            await dbApi.upsertEmployee(updated);
-          }
+
+(async () => {
+  try {
+    await dbApi.upsertEmployee(updated);
+  } catch (err) {
+    console.error("Failed to update employee in DB", err);
+  }
+})();
+
+}
         }
 
         await dbApi.createLeave(newLeave);

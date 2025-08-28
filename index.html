@@ -404,23 +404,16 @@
       const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
       const nextWorkingDay = (date) => {
         const d = new Date(date);
-        while (!isBookableDay(d)) d.setDate(d.getDate() + 1);
+        while (!isWorkingDay(d)) d.setDate(d.getDate() + 1);
         return d;
       };
-      // --- booking constraints ---
-      const isShutdownDate = (date) => {
-        const d = new Date(date);
-        return workshopShutdowns.some(s => d >= new Date(s.startDate) && d <= new Date(s.endDate));
-      };
-      const isBookableDay = (date) => (!isWeekendDay(date) && !isBankHolidayDate(date)) && !isShutdownDate(date);
-
       const addWorkingDays = (start, days) => {
         let d = nextWorkingDay(start);
         if (days <= 1) return d;
         let remaining = days - 1;
         while (remaining > 0) {
           d.setDate(d.getDate() + 1);
-          if (isBookableDay(d)) remaining--;
+          if (isWorkingDay(d)) remaining--;
         }
         return d;
       };
@@ -431,6 +424,7 @@
         duration: "", // "D:n" or "H:n"
         type: ""
       });
+      const [isSavingQuick, setIsSavingQuick] = useState(false);
 
       const [employeeForm, setEmployeeForm] = useState({ name: '', department: '', totalLeave: '160', usedLeave: '0', color: '#3B82F6' });
       const colorOptions = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4'];
@@ -550,74 +544,70 @@
         return () => { unsubEmp?.(); unsubLeave?.(); unsubShut?.(); };
       }, [dbApi]);
 
-      
-      // ---- Over-allocation confirmation helper ----
-      const getEffective = (leave) =>
-        (typeof effectiveHours === 'function' ? effectiveHours(leave) : (leave?.hours || 0));
-
-      const confirmLeaveOverage = (empId, addedHours, leaveType = 'Annual Leave') => {
-        // In Lieu doesn't reduce allowance
-        if (leaveType === 'In Lieu') return true;
-
-        const emp = employees.find(e => e.id === empId);
-        if (!emp) return true;
-
-        const total = emp.totalLeave || 0;
-        const used  = usedHoursThisYearFor(empId) || 0;
-        const remaining = Math.max(0, total - used);
-
-        if (addedHours <= remaining) return true;
-
-        const overBy = addedHours - remaining;
-        return confirm(
-          `${emp.name} only has ${formatHours(remaining)} remaining.\n` +
-          `This booking adds ${formatHours(addedHours)} and will exceed the balance by ${formatHours(overBy)}.\n\n` +
-          `Do you want to continue?`
-        );
-      };
-
       // ---------- ACTIONS ----------
-      const saveQuickLeave = async () => {
-        if (!isBookableDay(selectedDate)) {
-          addNotification('You can only book leave on working days (no weekends, bank holidays or shutdowns).', 'error');
-          return;
-        }
+      
+const saveQuickLeave = async () => {
+  if (isSavingQuick) return;              // prevent double submits
+  setIsSavingQuick(true);
+  try {
+    // Validate
+    if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
+      addNotification('Please complete all fields', 'error');
+      return;
+    }
 
-        if (!quickLeaveForm.employeeId || !quickLeaveForm.duration || !quickLeaveForm.type) {
-          addNotification('Please complete all fields', 'error');
-          return;
-        }
+    const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
+    if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
 
-        const employee = employees.find(emp => emp.id === parseInt(quickLeaveForm.employeeId));
-        if (!employee) { addNotification('Please select a valid employee', 'error'); return; }
+    // Parse duration
+    const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
+    const n = Math.max(1, parseInt(valueStr || '1'));
+    const isHours = unit === 'H';
 
-        const [unit, valueStr] = String(quickLeaveForm.duration).split(':');
-        const n = Math.max(1, parseInt(valueStr || '1'));
-        const isHours = unit === 'H';
+    // Determine start day aligned to next working day from the selected date
+    let start = nextWorkingDay(new Date(selectedDate));
+    let end   = isHours ? new Date(start) : addWorkingDays(start, n);
+    const totalHours = isHours ? n : n * 8;
 
-        let start = nextWorkingDay(new Date(selectedDate));
-        let end   = new Date(start);
+    // Over-allocation confirmation
+    const empIdInt = parseInt(quickLeaveForm.employeeId);
+    if (!confirmLeaveOverage(empIdInt, totalHours, quickLeaveForm.type)) {
+      addNotification('Booking cancelled', 'error');
+      return;
+    }
 
-        if (!isHours) {
-          end = addWorkingDays(start, n);
-        }
-        const totalHours = isHours ? n : n * 8;
+    const newLeave = {
+      employeeId: empIdInt,
+      startDate: start,
+      endDate: end,
+      type: quickLeaveForm.type,
+      status: 'approved',
+      hours: totalHours
+    };
 
-        
-        // Over-allocation confirmation
-        const empIdInt = parseInt(quickLeaveForm.employeeId);
-        if (!confirmLeaveOverage(empIdInt, totalHours, quickLeaveForm.type)) {
-          addNotification('Booking cancelled', 'error');
-          return;
-        }
-const newLeave = {
-          employeeId: parseInt(quickLeaveForm.employeeId),
-          startDate: start,
-          endDate: end,
-          type: quickLeaveForm.type,
-          status: 'approved',
-          hours: totalHours
-        };
+    // ✅ Optimistic add ONLY in offline mode
+    if (!window.__fb?.db) {
+      setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
+    }
+
+    // Update employee usedLeave locally for display (skip In Lieu)
+    if (quickLeaveForm.type !== 'In Lieu') {
+      const changed = employees.find(e => e.id === newLeave.employeeId);
+      if (changed) {
+        const updated = { ...changed, usedLeave: (changed.usedLeave || 0) + totalHours };
+        setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+        await dbApi.upsertEmployee(updated);
+      }
+    }
+
+    await dbApi.createLeave(newLeave);
+    setShowQuickLeaveModal(false);
+    addNotification('Leave added', 'success');
+  } finally {
+    setIsSavingQuick(false);
+  }
+};
+
 
         setLeaveRequests(prev => [...prev, { ...newLeave, id: `tmp-${Date.now()}` }]);
 
@@ -727,18 +717,7 @@ const newLeave = {
         const end = isHours ? new Date(start) : addWorkingDays(start, n);
         const hours = isHours ? n : n*8;
 
-        
-        // Over-allocation confirmation for edits (only when increasing usage)
-        const oldEff = getEffective(editingLeave);
-        const delta = (editLeaveForm.type === 'In Lieu') ? 0 : (hours - oldEff);
-        if (delta > 0) {
-          const empIdInt = parseInt(editLeaveForm.employeeId || editingLeave.employeeId);
-          if (!confirmLeaveOverage(empIdInt, delta, editLeaveForm.type)) {
-            addNotification('Update cancelled', 'error');
-            return;
-          }
-        }
-const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
+        const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours };
         // optimistic update
         setLeaveRequests(prev => prev.map(l => l.id === editingLeave.id ? { ...l, ...patch } : l));
         await dbApi.updateLeave(editingLeave.id, patch);
@@ -925,7 +904,7 @@ const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours 
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </button>
 
-                                {isCurrentMonth && isBookableDay(date) && (
+                                {isCurrentMonth && isWorkingDay(date) && (
                                   <span onClick={() => {
                                     setSelectedDate(date);
                                     setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
@@ -946,7 +925,7 @@ const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours 
                                   if (!employee) return null;
                                   return (
                                     <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate flex items-center justify-between group ${getStatusColor(leave.status)}`} title={leave.type}>
-                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70">• {lengthShort(leave)}</span></span>
+                                      <span className="truncate flex-1">{employee.name.split(' ')[0]} <span className="opacity-70"></span></span>
                                       <button onClick={async () => {
                                         if (confirm(`Cancel leave for ${employee?.name}?`)) {
                                           await dbApi.deleteLeaveRequest(leave.id);
@@ -1265,7 +1244,7 @@ const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours 
                         <option value="H:1">1 Hour</option>
                         <option value="H:2">2 Hours</option>
                         <option value="H:3">3 Hours</option>
-                        <option value="H:4">4 Hours</option>
+                        <option value="H:4">4 Hours (Half Day)</option>
                         <option value="H:5">5 Hours</option>
                         <option value="H:6">6 Hours</option>
                         <option value="H:7">7 Hours</option>
@@ -1340,9 +1319,7 @@ const patch = { startDate: start, endDate: end, type: editLeaveForm.type, hours 
     // open the modal on the next tick (after the drawer collapses)
     setTimeout(() => setShowQuickLeaveModal(true), 0);
   }}
-  className={`px-3 py-2 rounded-md text-white ${isBookableDay(drawerDate) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"}`}
-  disabled={!isBookableDay(drawerDate)}
-  title={isBookableDay(drawerDate) ? "Add leave" : "Cannot add leave on non-working day"}
+  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
 >
   Add Leave
 </button>

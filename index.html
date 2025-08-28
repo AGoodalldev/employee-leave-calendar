@@ -3,87 +3,386 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Leave Calendar (Full Patched)</title>
+  <title>Leave Calendar (Patched Full)</title>
+  <link rel="icon" href="data:,">
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+  </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
-  <script type="text/babel">
 
+  <script type="text/babel">
     const { useState, useMemo } = React;
 
-    // -----------------
-    // Bank Holidays Fix
-    // -----------------
-    function easter(year) {
-      const f = Math.floor,
-            G = year % 19,
-            C = f(year / 100),
-            H = (C - f(C / 4) - f((8 * C + 13) / 25) + 19 * G + 15) % 30,
-            I = H - f(H / 28) * (1 - f(29 / (H + 1)) * f((21 - G) / 11));
-      const day = I - ((year + f(year / 4) + I + 2 - C + f(C / 4)) % 7) + 28;
-      const month = 3;
+    // ---------------- Bank Holidays (UK) ----------------
+    function easterSunday(year) {
+      // Anonymous Gregorian algorithm (safe vars)
+      const a = year % 19;
+      const b = Math.floor(year / 100);
+      const c = year % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19 * a + b - d - g + 15) % 30;
+      const iFix = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2 * e + 2 * iFix - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const month = Math.floor((h + l - 7 * m + 114) / 31);    // 3=March, 4=April
+      const day = ((h + l - 7 * m + 114) % 31) + 1;
       return new Date(year, month - 1, day);
     }
-
     function bankHolidays(year) {
-      const easterSunday = easter(year);
-      const goodFriday = new Date(easterSunday); goodFriday.setDate(goodFriday.getDate() - 2);
-      const easterMonday = new Date(easterSunday); easterMonday.setDate(easterMonday.getDate() + 1);
-      return [
-        { name: "New Year's Day", date: new Date(year, 0, 1) },
-        { name: "Good Friday", date: goodFriday },
-        { name: "Easter Monday", date: easterMonday },
-        { name: "Early May Bank Holiday", date: new Date(year, 4, 1) },
-        { name: "Spring Bank Holiday", date: new Date(year, 4, 31) },
-        { name: "Summer Bank Holiday", date: new Date(year, 7, 31) },
-        { name: "Christmas Day", date: new Date(year, 11, 25) },
-        { name: "Boxing Day", date: new Date(year, 11, 26) },
-      ];
+      const hs = [];
+      const easter = easterSunday(year);
+      const goodFriday = new Date(easter); goodFriday.setDate(goodFriday.getDate() - 2);
+      const easterMonday = new Date(easter); easterMonday.setDate(easterMonday.getDate() + 1);
+      const firstMonday = (m) => {
+        const d = new Date(year, m, 1);
+        const dow = d.getDay();
+        const add = dow === 0 ? 1 : (dow === 1 ? 0 : (8 - dow));
+        d.setDate(1 + add); return d;
+      };
+      const lastMonday = (m) => {
+        const d = new Date(year, m + 1, 0);
+        const dow = d.getDay();
+        const sub = dow === 1 ? 0 : (dow === 0 ? 6 : (dow - 1));
+        d.setDate(d.getDate() - sub); return d;
+      };
+      hs.push({ name: "New Year's Day", date: new Date(year, 0, 1) });
+      hs.push({ name: "Good Friday", date: goodFriday });
+      hs.push({ name: "Easter Monday", date: easterMonday });
+      hs.push({ name: "Early May Bank Holiday", date: firstMonday(4) });  // May
+      hs.push({ name: "Spring Bank Holiday", date: lastMonday(4) });      // May
+      hs.push({ name: "Summer Bank Holiday", date: lastMonday(7) });      // Aug
+      hs.push({ name: "Christmas Day", date: new Date(year, 11, 25) });
+      hs.push({ name: "Boxing Day", date: new Date(year, 11, 26) });
+      return hs;
+    }
+    const sameDay = (a,b) => a.toDateString() === b.toDateString();
+    const isBankHoliday = (date) => bankHolidays(date.getFullYear()).some(h => sameDay(h.date, date));
+    const isWeekend = (d) => d.getDay()===0 || d.getDay()===6;
+    const isWorkingDay = (d) => !isWeekend(d) && !isBankHoliday(d);
+
+    // ---------------- Helpers ----------------
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const shortMonth = (m) => monthNames[m].slice(0,3);
+
+    function* workingDaysBetweenInclusive(start, end, excludeDatesSet) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const zEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      while (d <= zEnd) {
+        const key = d.toISOString().slice(0,10);
+        if (isWorkingDay(d) && !(excludeDatesSet && excludeDatesSet.has(key))) {
+          yield new Date(d);
+        }
+        d.setDate(d.getDate()+1);
+      }
     }
 
-    function isBankHoliday(date) {
-      return bankHolidays(date.getFullYear()).some(h =>
-        h.date.toDateString() === date.toDateString()
-      );
-    }
+    const hoursLabelForDay = (h) => {
+      if (h >= 8 && h % 8 === 0) return "Full Day";
+      if (h === 4) return "Half Day";
+      return h + "h";
+    };
 
-    function isWorkingDay(date) {
-      const day = date.getDay();
-      return day !== 0 && day !== 6 && !isBankHoliday(date);
-    }
+    // ---------------- Demo Data ----------------
+    const seedEmployees = [
+      { id: 1, name: "Andy Goodall", department: "CNC", totalLeave: 128, color: "#34D399" }
+    ];
 
-    // -----------------
-    // Demo App
-    // -----------------
+    const seedLeaves = [
+      // hours: 32 = 4 days block
+      { id: "L1", employeeId: 1, type: "Annual Leave", startDate: new Date(2025,7,18), endDate: new Date(2025,7,21), hours: 32, excludedDates: [] },
+      // a separate 1 day later in the month
+      { id: "L2", employeeId: 1, type: "Annual Leave", startDate: new Date(2025,7,27), endDate: new Date(2025,7,27), hours: 8, excludedDates: [] },
+    ];
+
+    // ---------------- App ----------------
     function App() {
-      const [leaves] = useState([
-        { id: 1, employee: "Andy", type: "Annual Leave", hours: 8, startDate: "2025-08-18" },
-        { id: 2, employee: "Andy", type: "Annual Leave", hours: 4, startDate: "2025-08-27" }
-      ]);
+      const [currentDate, setCurrentDate] = useState(new Date(2025,7,1));
+      const [employees, setEmployees] = useState(seedEmployees);
+      const [leaves, setLeaves] = useState(seedLeaves);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [showAdd, setShowAdd] = useState(false);
 
-      const formatDuration = (hours) => {
-        if (hours >= 8) return "Full Day";
-        if (hours === 4) return "Half Day";
-        return hours + "h";
+      // compute days in view (month)
+      const days = useMemo(() => {
+        const y = currentDate.getFullYear(), m = currentDate.getMonth();
+        const first = new Date(y,m,1);
+        const start = new Date(first); start.setDate(start.getDate() - first.getDay());
+        return Array.from({length:42}, (_,i) => new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
+      }, [currentDate]);
+
+      // per-day entries (dedup + skip 0h)
+      const dayEntries = useMemo(() => {
+        const map = new Map(); // key dateStr -> array of {employeeId, leaveId, hoursForThatDay}
+        for (const lv of leaves) {
+          const excl = new Set((lv.excludedDates||[]).map(s => s));
+          const sd = new Date(lv.startDate), ed = new Date(lv.endDate);
+          const isBlock = (lv.hours % 8 === 0) && (sd.toDateString() !== ed.toDateString());
+          if (isBlock) {
+            for (const d of workingDaysBetweenInclusive(sd, ed, excl)) {
+              const dateStr = d.toISOString().slice(0,10);
+              if (!map.has(dateStr)) map.set(dateStr, []);
+              // 8 hours per included working day
+              map.get(dateStr).push({ employeeId: lv.employeeId, leaveId: lv.id, type: lv.type, hours: 8 });
+            }
+          } else {
+            // hours on the startDate only if working day and not excluded
+            const dateStr = sd.toISOString().slice(0,10);
+            if (isWorkingDay(sd) && !excl.has(dateStr)) {
+              if (!map.has(dateStr)) map.set(dateStr, []);
+              map.get(dateStr).push({ employeeId: lv.employeeId, leaveId: lv.id, type: lv.type, hours: lv.hours });
+            }
+          }
+        }
+        // dedup per employee per day: keep max hours entry for that day
+        for (const [k, arr] of map) {
+          const bestByEmp = new Map();
+          arr.forEach(item => {
+            if (!bestByEmp.has(item.employeeId) || bestByEmp.get(item.employeeId).hours < item.hours) {
+              bestByEmp.set(item.employeeId, item);
+            }
+          });
+          // Filter out 0h (shouldn't happen here, but safe)
+          map.set(k, Array.from(bestByEmp.values()).filter(x => x.hours > 0));
+        }
+        return map;
+      }, [leaves]);
+
+      // Used/Remaining hours (year-aware) from leaves breakdown
+      const usedHoursThisYear = (empId, year) => {
+        let total = 0;
+        for (const lv of leaves) {
+          if (lv.employeeId !== empId) continue;
+          const excl = new Set((lv.excludedDates||[]));
+          const sd = new Date(lv.startDate), ed = new Date(lv.endDate);
+          const isBlock = (lv.hours % 8 === 0) && (sd.toDateString() !== ed.toDateString());
+          if (isBlock) {
+            for (const d of workingDaysBetweenInclusive(sd, ed, excl)) {
+              if (d.getFullYear()===year) total += 8;
+            }
+          } else {
+            const ds = sd;
+            if (ds.getFullYear()===year && isWorkingDay(ds) && !excl.has(ds.toISOString().slice(0,10))) total += lv.hours;
+          }
+        }
+        return total;
       };
 
+      const currentYear = currentDate.getFullYear();
+
+      const addLeave = (form) => {
+        // form: { employeeId, qty, unit, type, startDate }
+        const emp = employees.find(e => e.id === parseInt(form.employeeId));
+        if (!emp) return;
+        const requestedHours = form.unit === 'H' ? form.qty : (form.qty * 8);
+
+        // compute remaining
+        const used = usedHoursThisYear(emp.id, currentYear);
+        const remaining = Math.max(0, (emp.totalLeave || 0) - used);
+        if (requestedHours > remaining) {
+          const ok = confirm(`${emp.name} has only ${Math.floor(remaining/8)}d ${(remaining%8)||0}h remaining for ${currentYear}.\nThis request is ${form.unit==='H'?requestedHours+'h':(form.qty+'d')} and will exceed the balance.\n\nDo you want to continue?`);
+          if (!ok) return;
+        }
+
+        const start = new Date(form.startDate);
+        const newLeave = {
+          id: 'L' + Date.now(),
+          employeeId: parseInt(form.employeeId),
+          type: form.type,
+          startDate: start,
+          endDate: form.unit === 'H' ? new Date(start) : (()=>{
+            // add working days (qty-1) to reach end (inclusive)
+            let d = new Date(start);
+            let remaining = form.qty - 1;
+            while (remaining > 0) {
+              d.setDate(d.getDate()+1);
+              if (isWorkingDay(d)) remaining--;
+            }
+            return d;
+          })(),
+          hours: requestedHours,
+          excludedDates: []
+        };
+        setLeaves(prev => [...prev, newLeave]);
+        setShowAdd(false);
+      };
+
+      // Drawer helpers: list entries for the clicked day with per-day label
+      const entriesForDay = (d) => {
+        const key = d.toISOString().slice(0,10);
+        return dayEntries.get(key) || [];
+      };
+
+      const firstName = (full) => full.split(" ")[0];
+
+      // UI state for quick add form
+      const [form, setForm] = useState({ employeeId:"1", unit:"D", qty:1, type:"Annual Leave" });
+
       return (
-        <div className="p-6">
-          <h1 className="text-lg font-bold mb-4">Leave Calendar (Demo)</h1>
-          {leaves.map(l => (
-            <div key={l.id} className="bg-green-100 p-2 mb-2 rounded">
-              <strong>{l.employee}</strong> — {l.type} • {formatDuration(l.hours)} • {l.startDate}
+        <div className="max-w-6xl mx-auto p-6">
+          <header className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <button className="px-2 py-1 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()-1, 1))}>←</button>
+              <h1 className="text-2xl font-bold">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h1>
+              <button className="px-2 py-1 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()+1, 1))}>→</button>
             </div>
-          ))}
+            <button
+              className="px-4 py-2 rounded bg-blue-600 text-white"
+              onClick={()=>{ setSelectedDate(new Date()); setShowAdd(true); }}
+            >
+              Quick Add
+            </button>
+          </header>
+
+          {/* Employees Summary */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {employees.map(emp => {
+              const used = usedHoursThisYear(emp.id, currentYear);
+              const remaining = Math.max(0, (emp.totalLeave || 0) - used);
+              const pct = (used / Math.max(1,(emp.totalLeave||1))) * 100;
+              const fmt = (h)=> (h%8===0) ? ((h/8)+'d') : (Math.floor(h/8)+'d '+(h%8)+'h');
+              return (
+                <div key={emp.id} className="bg-white rounded-xl border p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{background: emp.color}}>
+                      {emp.name.split(' ').map(w=>w[0]).join('').slice(0,2)}
+                    </div>
+                    <div>
+                      <div className="font-semibold">{emp.name}</div>
+                      <div className="text-sm text-gray-500">{emp.department}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                    <div><span className="text-gray-500">Total:</span> <span className="font-medium">{fmt(emp.totalLeave||0)}</span></div>
+                    <div><span className="text-gray-500">Used:</span> <span className="font-medium">{fmt(used)}</span></div>
+                    <div><span className="text-gray-500">Remaining:</span> <span className="font-medium text-green-600">{fmt(remaining)}</span></div>
+                    <div><span className="text-gray-500">Usage:</span> <span className="font-medium">{pct.toFixed(1)}%</span></div>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded">
+                    <div className="h-2 rounded" style={{width: Math.min(100,pct)+'%', background: emp.color}}></div>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+
+          {/* Calendar Grid */}
+          <section className="bg-white rounded-xl border">
+            <div className="grid grid-cols-7 gap-1 p-3 text-sm text-gray-500">
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1 p-3 pt-0">
+              {days.map((date, idx) => {
+                const inMonth = date.getMonth()===currentDate.getMonth();
+                const isToday = sameDay(date, new Date());
+                const items = entriesForDay(date);
+                // ensure dedup already but filter 0h just in case
+                const filtered = items.filter(x => x.hours > 0);
+                // sort by employee name
+                filtered.sort((a,b)=>{
+                  const ea = employees.find(e=>e.id===a.employeeId)?.name||'';
+                  const eb = employees.find(e=>e.id===b.employeeId)?.name||'';
+                  return ea.localeCompare(eb);
+                });
+                return (
+                  <div key={idx} className={`min-h-[100px] border p-2 rounded ${!inMonth?'bg-gray-50 text-gray-400':''} ${isToday?'bg-red-50 border-red-200':''}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className={`text-sm ${isToday?'text-red-600':''}`}>{date.getDate()}</div>
+                      {inMonth && isWorkingDay(date) && (
+                        <button className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center"
+                                onClick={()=>{ setSelectedDate(date); setShowAdd(true); }}>+</button>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {filtered.map((it, i) => {
+                        const emp = employees.find(e=>e.id===it.employeeId);
+                        if (!emp) return null;
+                        return (
+                          <div key={i} className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 text-center truncate">{firstName(emp.name)}</div>
+                        );
+                      })}
+                      {/* Bank holiday tag */}
+                      {!isWorkingDay(date) && isBankHoliday(date) && (
+                        <div className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800 text-center">Bank Holiday</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Add Modal */}
+          {showAdd && selectedDate && (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-5 w-full max-w-md">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold">Quick Add Leave — {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={()=>setShowAdd(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Employee</label>
+                    <select className="w-full border rounded px-3 py-2"
+                            value={form.employeeId}
+                            onChange={(e)=>setForm({...form, employeeId:e.target.value})}>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-sm text-gray-600 mb-1">Quantity</label>
+                      <input type="number" min="1" className="w-full border rounded px-3 py-2"
+                             value={form.qty} onChange={(e)=>setForm({...form, qty:parseInt(e.target.value||'1',10)})}/>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Unit</label>
+                      <select className="w-full border rounded px-3 py-2"
+                              value={form.unit} onChange={(e)=>setForm({...form, unit:e.target.value})}>
+                        <option value="D">Days</option>
+                        <option value="H">Hours</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Type</label>
+                    <select className="w-full border rounded px-3 py-2"
+                            value={form.type} onChange={(e)=>setForm({...form, type:e.target.value})}>
+                      <option>Annual Leave</option>
+                      <option>In Lieu</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+                    <input type="date" className="w-full border rounded px-3 py-2"
+                           value={selectedDate.toISOString().slice(0,10)}
+                           onChange={(e)=>setSelectedDate(new Date(e.target.value))}/>
+                  </div>
+                  <div className="pt-2 flex justify-end gap-2">
+                    <button className="px-4 py-2 rounded border" onClick={()=>setShowAdd(false)}>Cancel</button>
+                    <button className="px-4 py-2 rounded bg-blue-600 text-white"
+                            onClick={()=>addLeave({ ...form, startDate: selectedDate })}>
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
   </script>
 </body>
 </html>

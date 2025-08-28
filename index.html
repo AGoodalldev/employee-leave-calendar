@@ -3,48 +3,432 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Atkin Guitars Leave Calendar</title>
+  <title>Atkin Guitars Leave Calendar – Full</title>
+
+  <link rel="icon" href="data:,">
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body{font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+  </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
+
   <script type="text/babel">
+    const { useState, useMemo } = React;
 
-    const { useState } = React;
+    // ---------- Helpers ----------
+    const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const isSameDate = (a,b)=>a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    const clone = (d)=>new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-    // Utility to format leave length nicely
-    const formatLeaveLength = (hours) => {
-      if (hours === 8) return "Full Day";
-      if (hours === 4) return "Half Day";
-      if (hours < 8) return hours + "h";
-      if (hours % 8 === 0) return (hours / 8) + "d";
-      return hours + "h";
+    const isWeekend = (d)=> d.getDay()===0 || d.getDay()===6;
+    const easter = (Y)=>{const C=Math.floor(Y/100), N=Y-19*Math.floor(Y/19), K=Math.floor((C-17)/25), I=C-Math.floor(C/4)-Math.floor((C-K)/3)+19*N+15; I=I-30*Math.floor(I/30); I=I-Math.floor(I/28)*(1-Math.floor(I/28)*Math.floor(29/(I+1))*Math.floor((21-N)/11)); let J=Y+Math.floor(Y/4)+I+2-C+Math.floor(C/4); J=J-7*Math.floor(J/7); const L=I-J; const M=3+Math.floor((L+40)/44); const D=L+28-31*Math.floor(M/4); return new Date(Y,M-1,D); };
+    const bankHolidays = (y)=>{
+      const e = easter(y);
+      const gf = new Date(e); gf.setDate(gf.getDate()-2);
+      const em = new Date(e); em.setDate(em.getDate()+1);
+      return [
+        new Date(y,0,1), // NYD
+        gf, em,
+        // early May: first Monday in May
+        (()=>{const d=new Date(y,4,1); while(d.getDay()!==1) d.setDate(d.getDate()+1); return d;})(),
+        // Spring: last Monday in May
+        (()=>{const d=new Date(y,4,31); while(d.getDay()!==1) d.setDate(d.getDate()-1); return d;})(),
+        // Summer: last Monday in Aug
+        (()=>{const d=new Date(y,7,31); while(d.getDay()!==1) d.setDate(d.getDate()-1); return d;})(),
+        new Date(y,11,25),
+        new Date(y,11,26),
+      ];
+    };
+    const isBankHoliday = (d)=> bankHolidays(d.getFullYear()).some(x=>isSameDate(x,d));
+    const isWorkingDay = (d)=> !isWeekend(d) && !isBankHoliday(d);
+
+    const nextWorkingDay = (d)=>{ const x=clone(d); while(!isWorkingDay(x)) x.setDate(x.getDate()+1); return x; };
+    const addWorkingDays = (start, days)=>{
+      if(days<=1) return clone(start);
+      let left = days-1; const d = nextWorkingDay(start);
+      const out = clone(d);
+      while(left>0){ out.setDate(out.getDate()+1); if(isWorkingDay(out)) left--; }
+      return out;
     };
 
-    function LeaveCalendar() {
-      const [leaves, setLeaves] = useState([
-        { id: 1, employee: "Andy", type: "Annual Leave", hours: 8, startDate: "2025-08-18" },
-        { id: 2, employee: "Andy", type: "Annual Leave", hours: 4, startDate: "2025-08-27" }
+    const formatDayAmount = (hoursForThatDay)=>{
+      if(hoursForThatDay===8) return "Full Day";
+      if(hoursForThatDay===4) return "Half Day";
+      if(hoursForThatDay>0 && hoursForThatDay<8) return hoursForThatDay+"h";
+      return ""; // for 0h we hide
+    };
+
+    // ---------- App ----------
+    function App(){
+      // employees
+      const [employees, setEmployees] = useState([
+        { id: 1, name:"Andy Goodall", dept:"CNC", total: 16*8, used: 0, color:"#10B981", avatar:"AG" },
       ]);
 
-      return (
-        <div className="p-6">
-          <h1 className="text-xl font-bold mb-4">Leave Calendar (Demo)</h1>
-          <div className="space-y-2">
-            {leaves.map(leave => (
-              <div key={leave.id} className="p-3 bg-green-100 rounded">
-                <strong>{leave.employee}</strong> — {leave.type} • {formatLeaveLength(leave.hours)} • {leave.startDate}
-              </div>
-            ))}
+      // shutdown example (24-26 Aug 2025)
+      const [shutdowns] = useState([{ id:"ws1", name:"Maintenance", start:new Date(2025,7,24), end:new Date(2025,7,26) }]);
+
+      const [currentDate, setCurrentDate] = useState(new Date(2025,7,1)); // Aug 2025
+
+      // Leave items with optional excludedDays: ["YYYY-MM-DD"]
+      const [leaves, setLeaves] = useState([
+        { id:"L1", employeeId:1, type:"Annual Leave", start:new Date(2025,7,15), end:new Date(2025,7,20), hours:6*8, excludedDays:[] },
+        { id:"L2", employeeId:1, type:"Annual Leave", start:new Date(2025,7,27), end:new Date(2025,7,27), hours:8, excludedDays:[] },
+      ]);
+
+      // recompute used automatically
+      const usedByEmp = useMemo(()=>{
+        const map = new Map();
+        for(const l of leaves){
+          const emp = l.employeeId;
+          let hours = 0;
+          // iterate working days between start/end and add 8 per day minus exclusions
+          const s = clone(l.start), e=clone(l.end);
+          for(let d=clone(s); d<=e; d.setDate(d.getDate()+1)){
+            const iso = d.toISOString().slice(0,10);
+            if(!isWorkingDay(d)) continue;
+            if(l.excludedDays?.includes(iso)) continue;
+            hours += 8;
+          }
+          map.set(emp, (map.get(emp)||0)+hours);
+        }
+        return map;
+      }, [leaves]);
+
+      const employeesWithUsed = employees.map(e=>({ ...e, used: usedByEmp.get(e.id)||0 }));
+
+      // calendar grid
+      const days = useMemo(()=>{
+        const y=currentDate.getFullYear(), m=currentDate.getMonth();
+        const first=new Date(y,m,1);
+        const start = new Date(y,m,1 - ((first.getDay()+6)%7)); // start Monday view
+        return Array.from({length:42}, (_,i)=>new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
+      }, [currentDate]);
+
+      // quick add
+      const [modalOpen, setModalOpen] = useState(false);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [form, setForm] = useState({ employeeId:"1", length:"D:1", type:"Annual Leave" });
+
+      const isShutdown = (d)=> shutdowns.some(s => d>=s.start && d<=s.end);
+      const isBookable = (d)=> isWorkingDay(d) && !isShutdown(d);
+
+      const openAdd = (date)=>{
+        setSelectedDate(date);
+        setForm({ employeeId:String(employees[0].id), length:"D:1", type:"Annual Leave" });
+        setModalOpen(true);
+      };
+
+      const confirmOverAllocation = (empId, addHours)=>{
+        const emp = employeesWithUsed.find(e=>e.id===empId);
+        if(!emp) return true;
+        const willUsed = (emp.used||0) + addHours;
+        if(willUsed > emp.total){
+          return window.confirm(`${emp.name} will exceed their balance (${Math.floor(emp.total/8)}d). Continue?`);
+        }
+        return true;
+      };
+
+      const createLeave = async ()=>{
+        const empId = parseInt(form.employeeId);
+        const [unit, valStr] = form.length.split(":");
+        const n = Math.max(1, parseInt(valStr||"1"));
+        const isHours = unit==="H";
+        const start = nextWorkingDay(selectedDate);
+        const end = isHours ? clone(start) : addWorkingDays(start, n);
+        const addHours = isHours ? n : n*8;
+
+        if(!confirmOverAllocation(empId, addHours)) return;
+
+        const newLeave = { id:`L${Date.now()}`, employeeId: empId, type: form.type, start, end, hours: addHours, excludedDays: [] };
+        setLeaves(prev => [...prev, newLeave]);
+        setModalOpen(false);
+      };
+
+      // day contents
+      const leaveForDay = (date)=>{
+        const out = [];
+        const seen = new Set(); // prevent dup in render
+        // shutdown/bank holiday markers first
+        if(isShutdown(date)){
+          out.push({ id:`S-${date}`, label:"Workshop Closed", style:"bg-red-100 text-red-800 text-center" });
+        }else if(isBankHoliday(date)){
+          out.push({ id:`B-${date}`, label:"Bank Holiday", style:"bg-purple-100 text-purple-800 text-center" });
+        }
+        for(const l of leaves){
+          if(date < l.start || date > l.end) continue;
+          if(!isWorkingDay(date)) continue;
+          const iso = date.toISOString().slice(0,10);
+          if(l.excludedDays?.includes(iso)) continue;
+
+          const emp = employees.find(e=>e.id===l.employeeId);
+          if(!emp) continue;
+          const key = `${emp.id}-${iso}`;
+          if(seen.has(key)) continue;
+          seen.add(key);
+
+          // compute per-day amount: either full 8h or, if total hours not divisible by number of working days,
+          // we'll clamp to 8h for each included day, and residual ignored for this simple UI.
+          const label = emp.name.split(" ")[0]; // name-only chip
+          out.push({ id:`L-${l.id}-${iso}`, label, style:"bg-green-100 text-green-800 text-center", leave:l });
+        }
+        return out;
+      };
+
+      // drawer
+      const [drawerOpen, setDrawerOpen] = useState(false);
+      const [drawerDate, setDrawerDate] = useState(null);
+
+      const openDrawer = (d)=>{ setDrawerDate(d); setDrawerOpen(true); };
+      const closeDrawer = ()=>{ setDrawerOpen(false); setDrawerDate(null); };
+
+      const dayItems = (drawerDate? leaveForDay(drawerDate): []);
+
+      const excludeSingleDay = (item)=>{
+        const iso = drawerDate.toISOString().slice(0,10);
+        setLeaves(prev => prev.map(l => {
+          if(l.id !== item.leave.id) return l;
+          const excluded = new Set(l.excludedDays||[]);
+          if(excluded.has(iso)) excluded.delete(iso); else excluded.add(iso);
+          return { ...l, excludedDays: Array.from(excluded) };
+        }));
+      };
+
+      const deleteIfEmptyAfterExclusion = (item)=>{
+        const iso = drawerDate.toISOString().slice(0,10);
+        setLeaves(prev => prev.filter(l => {
+          if(l.id !== item.leave.id) return true;
+          const excluded = new Set(l.excludedDays||[]);
+          excluded.add(iso);
+          // count working days in range not excluded
+          let keepHours = 0;
+          for(let d=clone(l.start); d<=l.end; d.setDate(d.getDate()+1)){
+            const s = d.toISOString().slice(0,10);
+            if(!isWorkingDay(d)) continue;
+            if(excluded.has(s)) continue;
+            keepHours += 8;
+          }
+          if(keepHours===0){
+            // remove block
+            return false;
+          }
+          // otherwise keep with exclusion
+          return true;
+        }).map(l => {
+          if(l.id !== item.leave.id) return l;
+          const e = new Set(l.excludedDays||[]); e.add(iso);
+          return { ...l, excludedDays: Array.from(e) };
+        }));
+      };
+
+      // Drawer formatting for the selected day's entry
+      const dayDetailRow = (it)=>{
+        if(it.label==="Bank Holiday" || it.label==="Workshop Closed") return (
+          <div key={it.id} className={"p-3 rounded border "+(it.label.indexOf("Bank")>=0?"border-purple-200 bg-purple-50":"border-red-200 bg-red-50")}>
+            <div className="font-medium">{it.label}</div>
           </div>
+        );
+        const leave = it.leave;
+        // 8h unless the day is excluded
+        const iso = drawerDate.toISOString().slice(0,10);
+        const excluded = leave.excludedDays?.includes(iso);
+        const hoursForThisDay = excluded ? 0 : 8;
+        const nice = formatDayAmount(hoursForThisDay);
+        return (
+          <div key={it.id} className="p-3 rounded border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">{employees.find(e=>e.id===leave.employeeId)?.name || "Employee"}</div>
+                <div className="text-sm text-gray-600">{leave.type} {nice?("• "+nice):""}</div>
+              </div>
+              <div className="flex gap-2">
+                <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200" onClick={()=>excludeSingleDay(it)}>
+                  {excluded? "Restore day" : "Exclude day"}
+                </button>
+                <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700" onClick={()=>deleteIfEmptyAfterExclusion(it)}>Delete day</button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="max-w-6xl mx-auto p-6">
+          <header className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold">Atkin Guitars Leave Calendar</h1>
+            <div className="flex items-center gap-2">
+              <button className="px-3 py-2 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()-1, 1))}>←</button>
+              <div className="font-medium w-44 text-center">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</div>
+              <button className="px-3 py-2 rounded border" onClick={()=>setCurrentDate(d=>new Date(d.getFullYear(), d.getMonth()+1, 1))}>→</button>
+            </div>
+          </header>
+
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="grid grid-cols-7 gap-1 p-2 text-center text-sm text-gray-500">
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><div key={d} className="py-2">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1 p-2 pt-0">
+              {days.map((date, i)=>{
+                const inMonth = date.getMonth()===currentDate.getMonth();
+                const isToday = isSameDate(date, new Date());
+                const items = leaveForDay(date);
+
+                return (
+                  <div key={i} className={`min-h-[110px] p-2 border ${inMonth?"bg-white":"bg-gray-50"} ${isToday?"bg-red-50":""}`}>
+                    <div className="flex justify-between items-start">
+                      <button className={`text-sm ${isToday?"text-red-600":"text-gray-700"} hover:underline`} onClick={()=>openDrawer(date)}>
+                        {date.getDate()}
+                      </button>
+                      {inMonth && isBookable(date) && (
+                        <button className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs hover:bg-blue-700"
+                                title="Quick add" onClick={()=>openAdd(date)}>+</button>
+                      )}
+                    </div>
+
+                    <div className="mt-1 space-y-1">
+                      {items.filter(it=>!(it.leave && it.leave.excludedDays?.includes(date.toISOString().slice(0,10)))).map(it=>{
+                        if(it.leave){
+                          return (
+                            <div key={it.id} className={`text-xs px-2 py-1 rounded ${it.style}`}>{it.label}</div>
+                          );
+                        }
+                        return <div key={it.id} className={`text-xs px-2 py-1 rounded ${it.style}`}>{it.label}</div>;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Employees summary */}
+          <div className="grid md:grid-cols-2 gap-6 mt-8">
+            {employeesWithUsed.map(emp=>{
+              const remaining = Math.max(0, emp.total - emp.used);
+              const usage = (emp.used/Math.max(1,emp.total))*100;
+              const upcoming = leaves.filter(l=>l.employeeId===emp.id && l.start>=new Date()).sort((a,b)=>a.start-b.start)[0];
+              return (
+                <div key={emp.id} className="bg-white rounded-xl shadow-sm border p-6">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 rounded-full text-white flex items-center justify-center font-semibold" style={{backgroundColor: emp.color}}>{emp.avatar}</div>
+                    <div>
+                      <div className="font-medium">{emp.name}</div>
+                      <div className="text-sm text-gray-500">{emp.dept}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                    <div><div className="text-gray-500">Total</div><div className="font-medium">{Math.floor(emp.total/8)}d</div></div>
+                    <div><div className="text-gray-500">Used</div><div className="font-medium">{Math.floor(emp.used/8)}d</div></div>
+                    <div><div className="text-gray-500">Remaining</div><div className="font-medium text-green-600">{Math.floor(remaining/8)}d</div></div>
+                    <div><div className="text-gray-500">Usage</div><div className="font-medium">{usage.toFixed(1)}%</div></div>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3"><div className="h-2 rounded-full" style={{width: Math.min(100,usage)+"%", backgroundColor: emp.color}}></div></div>
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">Upcoming Leave</div>
+                    {upcoming ? (
+                      <div className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800">
+                        <span>{upcoming.type}</span>
+                        <span>•</span>
+                        <span>{new Date(upcoming.start).toLocaleDateString()}</span>
+                      </div>
+                    ): <div className="text-xs text-gray-500">No upcoming leave</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick Add Modal */}
+          {modalOpen && selectedDate && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Quick Add Leave – {selectedDate.toLocaleDateString()}</h3>
+                  <button onClick={()=>setModalOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Employee</label>
+                    <select value={form.employeeId} onChange={e=>setForm(f=>({...f, employeeId:e.target.value}))}
+                            className="w-full border rounded px-3 py-2">
+                      {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Duration</label>
+                    <select value={form.length} onChange={e=>setForm(f=>({...f, length:e.target.value}))}
+                            className="w-full border rounded px-3 py-2">
+                      <optgroup label="Hours">
+                        <option value="H:1">1h</option>
+                        <option value="H:2">2h</option>
+                        <option value="H:3">3h</option>
+                        <option value="H:4">4h (Half Day)</option>
+                        <option value="H:5">5h</option>
+                        <option value="H:6">6h</option>
+                        <option value="H:7">7h</option>
+                      </optgroup>
+                      <optgroup label="Days">
+                        <option value="D:1">1 Day</option>
+                        <option value="D:2">2 Days</option>
+                        <option value="D:3">3 Days</option>
+                        <option value="D:4">4 Days</option>
+                        <option value="D:5">5 Days</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Type</label>
+                    <select value={form.type} onChange={e=>setForm(f=>({...f, type:e.target.value}))} className="w-full border rounded px-3 py-2">
+                      <option>Annual Leave</option>
+                      <option>In Lieu</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <button onClick={()=>setModalOpen(false)} className="px-4 py-2 rounded border">Cancel</button>
+                  <button onClick={createLeave} className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Add</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Day Drawer */}
+          {drawerOpen && drawerDate && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={closeDrawer}></div>
+              <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-4 max-h-[75vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {drawerDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    {!isWorkingDay(drawerDate) && (<p className="text-sm text-gray-500">Non‑working day</p>)}
+                  </div>
+                  <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100">✕</button>
+                </div>
+
+                <div className="mb-3">
+                  {isBookable(drawerDate) && (
+                    <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={()=>openAdd(drawerDate)}>Add Leave</button>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  {dayItems.length? dayItems.map(dayDetailRow) : <div className="text-sm text-gray-500">No entries.</div>}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
 
-    ReactDOM.render(<LeaveCalendar />, document.getElementById("root"));
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
   </script>
 </body>
 </html>

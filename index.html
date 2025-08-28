@@ -922,7 +922,7 @@ const isWorkingDay = (date) => !isWeekendDay(date) && !isBankHolidayDate(date);
                               </div>
 
                               <div className="space-y-1">
-                                {dayLeaves.map(leave => {
+                                {dayLeaves.filter(l => (l.isShutdown||l.isBankHoliday) ? true : (typeof effectiveHours==='function' ? effectiveHours(l) > 0 : ((l.hours||0)>0))).map(leave => {
                                   if (leave.isShutdown) {
                                     return <div key={leave.id} className={`text-xs px-2 py-1 rounded text-center truncate ${getStatusColor(leave.status)}`} title={leave.name}>Workshop Closed</div>;
                                   }

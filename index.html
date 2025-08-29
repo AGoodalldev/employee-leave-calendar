@@ -1,3 +1,12 @@
+
+// Per-day drawer label: Full Day, Half Day, or X hours
+const perDayLabel = (leave) => {
+  const h = Number(leave?.hours || 0);
+  if (h === 4) return 'Half Day';
+  if (h >= 8) return 'Full Day';
+  if (h > 0) return `${h} hours`;
+  return '0 hours';
+};
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1474,7 +1483,7 @@ return (
                           <div className="flex items-center justify-between">
                             <div>
                               <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
-                              <div className="text-sm text-gray-600">{item.type} • {lengthLong(item)}</div>
+                              <div className="text-sm text-gray-600">{item.type} • {perDayLabel(item)}</div>
                             </div>
                             <div className="flex gap-2">
                               <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"

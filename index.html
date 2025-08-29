@@ -589,7 +589,19 @@ const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date
         }
         const totalHours = isHours ? n : n * 8;
 
-        const newLeave = {
+        
+        // Over-allocation confirmation popup
+        try {
+          const empUsed = usedHoursThisYearFor(employee.id);
+          const empTotal = Number(employee.totalLeave || 0);
+          const projected = empUsed + totalHours;
+          if (projected > empTotal) {
+            const overBy = projected - empTotal;
+            const proceed = confirm(`Warning: this booking exceeds the allocated leave by ${overBy} hour${overBy===1?'':'s'}. Continue?`);
+            if (!proceed) { return; }
+          }
+        } catch (_) { /* fail open if calculation not available */ }
+const newLeave = {
           employeeId: parseInt(quickLeaveForm.employeeId),
           startDate: start,
           endDate: end,

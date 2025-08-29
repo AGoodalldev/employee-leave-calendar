@@ -588,6 +588,38 @@ const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date
           end = addWorkingDays(start, n);
         }
         const totalHours = isHours ? n : n * 8;
+        // Over-allocation confirmation (only for non "In Lieu")
+        if (quickLeaveForm.type !== 'In Lieu') {
+          const currentYear = new Date().getFullYear();
+          const usedThisYear = leaveRequests
+            .filter(l => l.employeeId === employee.id && l.type !== 'In Lieu' && new Date(l.startDate).getFullYear() === currentYear)
+            .reduce((sum, l) => sum + (l.hours || 0), 0);
+
+          const remaining = (employee.totalLeave || 0) - usedThisYear;
+          const willExceedBy = totalHours - Math.max(0, remaining);
+
+          if (totalHours > remaining) {
+            const msg = `Warning: this will exceed ${employee.name}'s allocation.
+
+` +
+                        `Allocated: ${employee.totalLeave || 0}h
+` +
+                        `Used this year: ${usedThisYear}h
+` +
+                        `Request: ${totalHours}h
+` +
+                        `Exceeds by: ${willExceedBy}h
+
+` +
+                        `Do you want to continue?`;
+            const proceed = window.confirm(msg);
+            if (!proceed) {
+              addNotification('Leave not added', 'error');
+              return;
+            }
+          }
+        }
+
 
         const newLeave = {
           employeeId: parseInt(quickLeaveForm.employeeId),

@@ -447,19 +447,20 @@
       };
       const lengthLong = (leave) => {
         const h = leave.hours || 0;
-
-      // NEW: label for a single day entry in the drawer
-      const perDayLabel = (leave) => {
-        const h = Number(leave?.hours ?? 8);
-        if (h >= 8) return 'Full Day';
-        if (h === 4) return 'Half Day';
-        return `${h}h`;
-      };
-
         if (h === 8) return '1 day';
         if (h % 8 === 0) return `${h/8} days`;
         return `${h} hours`;
       };
+
+      // Friendly, per-day label for a single calendar day in the drawer
+      const perDayLabel = (leave) => {
+        const hrs = leave?.hours ?? 0;
+        if (hrs === 8) return 'Full Day';
+        if (hrs === 4) return 'Half Day';
+        if (hrs > 0) return `${hrs} hours`;
+        return '';
+      };
+
 
       const formatHours = (h) => { const d=Math.floor(h/8), r=h%8; return r>0?`${d}d ${r}h`:`${d}d`; };
       const generateInitials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0,2);
@@ -1407,7 +1408,66 @@ return (
                           <div className="flex items-center justify-between">
                             <div>
                               <div className="font-medium text-gray-900">{emp?.name || 'Employee'}</div>
-                              <div className="text-sm text-gray-600">{item.type} • {perDayLabel(item)}>Cancel</button>
+                              <div className="text-sm text-gray-600">{item.type} • {perDayLabel(item)}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                      onClick={() => startEditLeave(item)}>Edit</button>
+                              <button className="px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                                      onClick={() => excludeSingleDay(item, drawerDate)}>Delete</button>
+                            </div>
+                          </div>
+
+                          {/* Inline editor inside the drawer */}
+                          {editingLeave?.id === item.id && (
+                            <div className="mt-3 border-t pt-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                                  <input type="date"
+                                         value={editLeaveForm.startDate}
+                                         onChange={(e) => setEditLeaveForm(p => ({...p, startDate: e.target.value}))}
+                                         className="w-full px-3 py-2 border rounded-md" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Type</label>
+                                  <select
+                                    value={editLeaveForm.type}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, type: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <option value="Annual Leave">Annual Leave</option>
+                                    <option value="In Lieu">In Lieu</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Duration</label>
+                                  <select
+                                    value={editLeaveForm.duration}
+                                    onChange={(e) => setEditLeaveForm(p => ({...p, duration: e.target.value}))}
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  >
+                                    <optgroup label="Hours">
+                                      <option value="H:1">1 Hour</option>
+                                      <option value="H:2">2 Hours</option>
+                                      <option value="H:3">3 Hours</option>
+                                      <option value="H:4">4 Hours (Half Day)</option>
+                                      <option value="H:5">5 Hours</option>
+                                      <option value="H:6">6 Hours</option>
+                                      <option value="H:7">7 Hours</option>
+                                    </optgroup>
+                                    <optgroup label="Days">
+                                      <option value="D:1">1 Day (8 hours)</option>
+                                      <option value="D:2">2 Days (16 hours)</option>
+                                      <option value="D:3">3 Days (24 hours)</option>
+                                      <option value="D:4">4 Days (32 hours)</option>
+                                      <option value="D:5">5 Days (40 hours)</option>
+                                    </optgroup>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-2 justify-end">
+                                <button className="px-3 py-2 rounded border" onClick={() => setEditingLeave(null)}>Cancel</button>
                                 <button className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={saveEditedLeave}>Save</button>
                               </div>
                             </div>

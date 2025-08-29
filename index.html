@@ -597,7 +597,22 @@ const shut = workshopShutdowns.filter(s => date >= new Date(s.startDate) && date
           const projected = empUsed + totalHours;
           if (projected > empTotal) {
             const overBy = projected - empTotal;
-            const proceed = confirm(`Warning: this booking exceeds the allocated leave by ${overBy} hour${overBy===1?'':'s'}. Continue?`);
+const overDays = Math.floor(overBy / 8);
+const overHours = overBy % 8;
+let overMsg = '';
+if (overDays > 0) overMsg += `${overDays} day${overDays > 1 ? 's' : ''}`;
+if (overDays > 0 && overHours > 0) overMsg += ' and ';
+if (overHours > 0) overMsg += `${overHours} hour${overHours > 1 ? 's' : ''}`;
+if (!overMsg) overMsg = '0 hours';
+
+const proceed = confirm(
+  `Warning: this booking exceeds the allocated leave by ${overMsg}.\n\n` +
+  `Allocated: ${empTotal}h\n` +
+  `Used this year: ${empUsed}h\n` +
+  `Request: ${totalHours}h\n\n` +
+  `Do you want to continue?`
+);
+
             if (!proceed) { return; }
           }
         } catch (_) { /* fail open if calculation not available */ }

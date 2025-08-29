@@ -991,13 +991,7 @@ return (
                                   {viewMode==='week' ? `${monthNames[date.getMonth()].slice(0,3)} ${date.getDate()}` : date.getDate()}
                                 </button>
 
-                                {isCurrentMonth && isBookableDay(date) && (
-                                  <span onClick={() => {
-                                    setSelectedDate(date);
-                                    setQuickLeaveForm({ employeeId:"", duration:"", type:"" });
-                                    setShowQuickLeaveModal(true);
-                                  }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs hover:bg-blue-700 cursor-pointer">+</span>
-                                )}
+                                
                               </div>
 
                               <div className="space-y-1">

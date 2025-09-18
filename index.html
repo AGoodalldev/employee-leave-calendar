@@ -8,7 +8,7 @@
   <!-- prevent favicon 404 noise -->
   <link rel="icon" href="data:,">
 
-  <!-- React / Tailwind / Babel -->
+  <!-- React / Tailwind / Babel (fine for prototyping; for prod, prebuild) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -33,12 +33,12 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase v12 ESM init with auth + realtime exposure (PATCHED) -->
+  <!-- Firebase v12 ESM init (PATCHED: new persistence + 'where' exposure) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
     import {
-      getFirestore, enableIndexedDbPersistence,
+      initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
       collection, doc, getDocs, getDoc, setDoc, deleteDoc,
       writeBatch, query, where, orderBy, Timestamp, onSnapshot
     } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
@@ -54,10 +54,13 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const db = getFirestore(app);
 
-    // Offline-first cache
-    enableIndexedDbPersistence(db).catch(() => {});
+    // ✅ New, recommended local persistence (replaces enableIndexedDbPersistence)
+    const db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    });
 
     // Wait for anonymous auth
     const ready = new Promise((resolve) => {
@@ -71,7 +74,7 @@
       });
     });
 
-    // Expose to the Babel script (PATCHED: expose 'where')
+    // Expose to the Babel script (includes 'where')
     window.__fb = {
       app, auth, db, ready,
       api: { collection, doc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, query, where, orderBy, Timestamp, onSnapshot }
@@ -105,13 +108,14 @@
         </svg>
       );
     };
-    // ---------- Firestore-backed Database API (PATCHED) ----------
+    <!-- Firestore-backed Database API (PATCHED) -->
+    <script type="text/babel">
     class DatabaseAPI {
       constructor(addNotificationCb) {
         this.addNotification = addNotificationCb || (() => {});
         this.fb = window.__fb || {};
         this.db = this.fb.db;
-        this.auth = this.fb.auth;                 // <-- needed to access current UID
+        this.auth = this.fb.auth;                 // needed to access current UID
         this.api = this.fb.api || {};
         this.unsubs = { employees: null, leaves: null, shutdowns: null };
       }
@@ -134,7 +138,7 @@
         return this.unsubs.employees;
       }
 
-      // PATCHED: only stream current user's leave docs
+      // only stream current user's leave docs
       subscribeLeaveRequests(setter) {
         if (!this.db) return () => {};
         const { collection, query, where, onSnapshot } = this.api;
@@ -185,7 +189,7 @@
         return snap.docs.map(d => d.data());
       }
 
-      // PATCHED: only fetch current user's leave docs
+      // only fetch current user's leave docs
       async fetchLeaveRequests() {
         if (!this.db) {
           const stored = localStorage.getItem('atkin_leave_requests');
@@ -242,7 +246,7 @@
         await deleteDoc(doc(this.db, "employees", String(id)));
       }
 
-      // PATCHED: write ownerId on create
+      // write ownerId on create
       async createLeave(leave) {
         if (!this.db) {
           const arr = await this.fetchLeaveRequests();
@@ -318,8 +322,6 @@
         await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
       }
     }
-    /* Your existing LeaveCalendar component code goes here — unchanged */
-    // ...
     ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
   </script>
 </body>

@@ -108,220 +108,220 @@
         </svg>
       );
     };
-    <!-- Firestore-backed Database API (PATCHED) -->
-    <script type="text/babel">
-    class DatabaseAPI {
-      constructor(addNotificationCb) {
-        this.addNotification = addNotificationCb || (() => {});
-        this.fb = window.__fb || {};
-        this.db = this.fb.db;
-        this.auth = this.fb.auth;                 // needed to access current UID
-        this.api = this.fb.api || {};
-        this.unsubs = { employees: null, leaves: null, shutdowns: null };
-      }
+  // ---------- Firestore-backed Database API (PATCHED) ----------
+class DatabaseAPI {
+  constructor(addNotificationCb) {
+    this.addNotification = addNotificationCb || (() => {});
+    this.fb = window.__fb || {};
+    this.db = this.fb.db;
+    this.auth = this.fb.auth;                 // needed to access current UID
+    this.api = this.fb.api || {};
+    this.unsubs = { employees: null, leaves: null, shutdowns: null };
+  }
 
-      _tsToDate(v) {
-        if (!v) return null;
-        if (v && typeof v.toDate === "function") return v.toDate();
-        if (typeof v === "string") return new Date(v);
-        return v instanceof Date ? v : null;
-      }
+  _tsToDate(v) {
+    if (!v) return null;
+    if (v && typeof v.toDate === "function") return v.toDate();
+    if (typeof v === "string") return new Date(v);
+    return v instanceof Date ? v : null;
+  }
 
-      subscribeEmployees(setter) {
-        if (!this.db) return () => {};
-        const { collection, query, orderBy, onSnapshot } = this.api;
-        const q = query(collection(this.db, "employees"), orderBy("name"));
-        this.unsubs.employees?.();
-        this.unsubs.employees = onSnapshot(q, (snap) => {
-          setter(snap.docs.map(d => d.data()));
-        });
-        return this.unsubs.employees;
-      }
+  subscribeEmployees(setter) {
+    if (!this.db) return () => {};
+    const { collection, query, orderBy, onSnapshot } = this.api;
+    const q = query(collection(this.db, "employees"), orderBy("name"));
+    this.unsubs.employees?.();
+    this.unsubs.employees = onSnapshot(q, (snap) => {
+      setter(snap.docs.map(d => d.data()));
+    });
+    return this.unsubs.employees;
+  }
 
-      // only stream current user's leave docs
-      subscribeLeaveRequests(setter) {
-        if (!this.db) return () => {};
-        const { collection, query, where, onSnapshot } = this.api;
-        const uid = this.auth?.currentUser?.uid;
-        const ref = query(collection(this.db, "leave_requests"), where("ownerId","==", uid));
-        this.unsubs.leaves?.();
-        this.unsubs.leaves = onSnapshot(ref, (snap) => {
-          const rows = snap.docs.map(d => {
-            const v = d.data();
-            return {
-              id: v.id ?? d.id,
-              ...v,
-              startDate: this._tsToDate(v.startDate),
-              endDate: this._tsToDate(v.endDate)
-            };
-          });
-          setter(rows);
-        });
-        return this.unsubs.leaves;
-      }
+  // only stream current user's leave docs
+  subscribeLeaveRequests(setter) {
+    if (!this.db) return () => {};
+    const { collection, query, where, onSnapshot } = this.api;
+    const uid = this.auth?.currentUser?.uid;
+    const ref = query(collection(this.db, "leave_requests"), where("ownerId","==", uid));
+    this.unsubs.leaves?.();
+    this.unsubs.leaves = onSnapshot(ref, (snap) => {
+      const rows = snap.docs.map(d => {
+        const v = d.data();
+        return {
+          id: v.id ?? d.id,
+          ...v,
+          startDate: this._tsToDate(v.startDate),
+          endDate: this._tsToDate(v.endDate)
+        };
+      });
+      setter(rows);
+    });
+    return this.unsubs.leaves;
+  }
 
-      subscribeWorkshopShutdowns(setter) {
-        if (!this.db) return () => {};
-        const { collection, onSnapshot } = this.api;
-        const ref = collection(this.db, "workshop_shutdowns");
-        this.unsubs.shutdowns?.();
-        this.unsubs.shutdowns = onSnapshot(ref, (snap) => {
-          const rows = snap.docs.map(d => {
-            const v = d.data();
-            return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
-          });
-          setter(rows);
-        });
-        return this.unsubs.shutdowns;
-      }
+  subscribeWorkshopShutdowns(setter) {
+    if (!this.db) return () => {};
+    const { collection, onSnapshot } = this.api;
+    const ref = collection(this.db, "workshop_shutdowns");
+    this.unsubs.shutdowns?.();
+    this.unsubs.shutdowns = onSnapshot(ref, (snap) => {
+      const rows = snap.docs.map(d => {
+        const v = d.data();
+        return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+      });
+      setter(rows);
+    });
+    return this.unsubs.shutdowns;
+  }
 
-      async fetchEmployees() {
-        if (!this.db) {
-          const stored = localStorage.getItem('atkin_employees');
-          return stored ? JSON.parse(stored) : [
-            { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
-            { id: 2, name: 'Michael Chen', department: 'Finishing', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
-            { id: 3, name: 'Emma Davis', department: 'Administration', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
-          ];
-        }
-        const { collection, getDocs, query, orderBy } = this.api;
-        const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
-        return snap.docs.map(d => d.data());
-      }
-
-      // only fetch current user's leave docs
-      async fetchLeaveRequests() {
-        if (!this.db) {
-          const stored = localStorage.getItem('atkin_leave_requests');
-          if (stored) return JSON.parse(stored).map(r => ({...r, startDate:new Date(r.startDate), endDate:new Date(r.endDate)}));
-          return [{ id: 1, employeeId: 1, startDate: new Date(2025,7,25), endDate: new Date(2025,7,29), type: 'Annual Leave', status: 'approved', hours: 40 }];
-        }
-        const { collection, query, where, getDocs } = this.api;
-        const uid = this.auth?.currentUser?.uid;
-        const snap = await getDocs(query(collection(this.db, "leave_requests"), where("ownerId","==", uid)));
-        return snap.docs.map(d => {
-          const v = d.data();
-          return {
-            id: v.id ?? d.id,
-            ...v,
-            startDate: this._tsToDate(v.startDate),
-            endDate: this._tsToDate(v.endDate)
-          };
-        });
-      }
-
-      async fetchWorkshopShutdowns() {
-        if (!this.db) {
-          const stored = localStorage.getItem('atkin_workshop_shutdowns');
-          if (stored) return JSON.parse(stored).map(s => ({...s, startDate:new Date(s.startDate), endDate:new Date(s.endDate)}));
-          return [];
-        }
-        const { collection, getDocs } = this.api;
-        const snap = await getDocs(collection(this.db, "workshop_shutdowns"));
-        return snap.docs.map(d => {
-          const v = d.data();
-          return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
-        });
-      }
-
-      async upsertEmployee(emp) {
-        if (!this.db) {
-          const arr = await this.fetchEmployees();
-          const i = arr.findIndex(e => e.id === emp.id);
-          if (i >= 0) arr[i] = emp; else arr.push(emp);
-          localStorage.setItem('atkin_employees', JSON.stringify(arr));
-          return;
-        }
-        const { doc, setDoc } = this.api;
-        await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
-      }
-
-      async deleteEmployee(id) {
-        if (!this.db) {
-          const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
-          localStorage.setItem('atkin_employees', JSON.stringify(arr));
-          return;
-        }
-        const { doc, deleteDoc } = this.api;
-        await deleteDoc(doc(this.db, "employees", String(id)));
-      }
-
-      // write ownerId on create
-      async createLeave(leave) {
-        if (!this.db) {
-          const arr = await this.fetchLeaveRequests();
-          arr.push({ ...leave, id: `local-${Date.now()}` });
-          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
-          return;
-        }
-        const { collection, doc, setDoc } = this.api;
-        const uid = this.auth?.currentUser?.uid;
-        const ref = doc(collection(this.db, "leave_requests"));
-        await setDoc(ref, { ...leave, id: ref.id, ownerId: uid });
-      }
-
-      async updateLeave(leaveId, partial) {
-        if (!this.db) {
-          const arr = await this.fetchLeaveRequests();
-          const i = arr.findIndex(r => r.id === leaveId);
-          if (i >= 0) {
-            const merged = { ...arr[i], ...partial };
-            arr[i] = merged;
-            localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:new Date(r.startDate).toISOString(), endDate:new Date(r.endDate).toISOString()}))));
-          }
-          return;
-        }
-        const { doc, setDoc } = this.api;
-        await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
-      }
-
-      async deleteLeaveRequest(id) {
-        if (!id) { console.warn("deleteLeaveRequest called without id"); return; }
-        if (!this.db) {
-          const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
-          localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
-          return;
-        }
-        const { doc, deleteDoc } = this.api;
-        await deleteDoc(doc(this.db, "leave_requests", String(id)));
-      }
-
-      async createShutdown(s) {
-        if (!this.db) {
-          const arr = await this.fetchWorkshopShutdowns();
-          arr.push({ ...s, id: `local-${Date.now()}` });
-          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
-          return;
-        }
-        const { collection, doc, setDoc } = this.api;
-        const ref = doc(collection(this.db, "workshop_shutdowns"));
-        await setDoc(ref, { ...s, id: ref.id });
-      }
-
-      async updateShutdown(id, partial) {
-        if (!this.db) {
-          const arr = await this.fetchWorkshopShutdowns();
-          const i = arr.findIndex(x => x.id === id);
-          if (i >= 0) {
-            arr[i] = { ...arr[i], ...partial };
-            localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:new Date(x.startDate).toISOString(), endDate:new Date(x.endDate).toISOString()}))));
-          }
-          return;
-        }
-        const { doc, setDoc } = this.api;
-        await setDoc(doc(this.db, "workshop_shutdowns", String(id)), partial, { merge: true });
-      }
-
-      async deleteWorkshopShutdown(id) {
-        if (!this.db) {
-          const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
-          localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:new Date(x.startDate).toISOString(), endDate:new Date(x.endDate).toISOString()}))));
-          return;
-        }
-        const { doc, deleteDoc } = this.api;
-        await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
-      }
+  async fetchEmployees() {
+    if (!this.db) {
+      const stored = localStorage.getItem('atkin_employees');
+      return stored ? JSON.parse(stored) : [
+        { id: 1, name: 'Sarah Johnson', department: 'Workshop', totalLeave: 200, usedLeave: 64, avatar: 'SJ', color: '#3B82F6' },
+        { id: 2, name: 'Michael Chen', department: 'Finishing', totalLeave: 160, usedLeave: 32, avatar: 'MC', color: '#10B981' },
+        { id: 3, name: 'Emma Davis', department: 'Administration', totalLeave: 180, usedLeave: 96, avatar: 'ED', color: '#F59E0B' }
+      ];
     }
+    const { collection, getDocs, query, orderBy } = this.api;
+    const snap = await getDocs(query(collection(this.db, "employees"), orderBy("name")));
+    return snap.docs.map(d => d.data());
+  }
+
+  // only fetch current user's leave docs
+  async fetchLeaveRequests() {
+    if (!this.db) {
+      const stored = localStorage.getItem('atkin_leave_requests');
+      if (stored) return JSON.parse(stored).map(r => ({...r, startDate:new Date(r.startDate), endDate:new Date(r.endDate)}));
+      return [{ id: 1, employeeId: 1, startDate: new Date(2025,7,25), endDate: new Date(2025,7,29), type: 'Annual Leave', status: 'approved', hours: 40 }];
+    }
+    const { collection, query, where, getDocs } = this.api;
+    const uid = this.auth?.currentUser?.uid;
+    const snap = await getDocs(query(collection(this.db, "leave_requests"), where("ownerId","==", uid)));
+    return snap.docs.map(d => {
+      const v = d.data();
+      return {
+        id: v.id ?? d.id,
+        ...v,
+        startDate: this._tsToDate(v.startDate),
+        endDate: this._tsToDate(v.endDate)
+      };
+    });
+  }
+
+  async fetchWorkshopShutdowns() {
+    if (!this.db) {
+      const stored = localStorage.getItem('atkin_workshop_shutdowns');
+      if (stored) return JSON.parse(stored).map(s => ({...s, startDate:new Date(s.startDate), endDate:new Date(s.endDate)}));
+      return [];
+    }
+    const { collection, getDocs } = this.api;
+    const snap = await getDocs(collection(this.db, "workshop_shutdowns"));
+    return snap.docs.map(d => {
+      const v = d.data();
+      return { id: v.id ?? d.id, ...v, startDate: this._tsToDate(v.startDate), endDate: this._tsToDate(v.endDate) };
+    });
+  }
+
+  async upsertEmployee(emp) {
+    if (!this.db) {
+      const arr = await this.fetchEmployees();
+      const i = arr.findIndex(e => e.id === emp.id);
+      if (i >= 0) arr[i] = emp; else arr.push(emp);
+      localStorage.setItem('atkin_employees', JSON.stringify(arr));
+      return;
+    }
+    const { doc, setDoc } = this.api;
+    await setDoc(doc(this.db, "employees", String(emp.id)), emp, { merge: true });
+  }
+
+  async deleteEmployee(id) {
+    if (!this.db) {
+      const arr = (await this.fetchEmployees()).filter(e => e.id !== id);
+      localStorage.setItem('atkin_employees', JSON.stringify(arr));
+      return;
+    }
+    const { doc, deleteDoc } = this.api;
+    await deleteDoc(doc(this.db, "employees", String(id)));
+  }
+
+  // write ownerId on create
+  async createLeave(leave) {
+    if (!this.db) {
+      const arr = await this.fetchLeaveRequests();
+      arr.push({ ...leave, id: `local-${Date.now()}` });
+      localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+      return;
+    }
+    const { collection, doc, setDoc } = this.api;
+    const uid = this.auth?.currentUser?.uid;
+    const ref = doc(collection(this.db, "leave_requests"));
+    await setDoc(ref, { ...leave, id: ref.id, ownerId: uid });
+  }
+
+  async updateLeave(leaveId, partial) {
+    if (!this.db) {
+      const arr = await this.fetchLeaveRequests();
+      const i = arr.findIndex(r => r.id === leaveId);
+      if (i >= 0) {
+        const merged = { ...arr[i], ...partial };
+        arr[i] = merged;
+        localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:new Date(r.startDate).toISOString(), endDate:new Date(r.endDate).toISOString()}))));
+      }
+      return;
+    }
+    const { doc, setDoc } = this.api;
+    await setDoc(doc(this.db, "leave_requests", String(leaveId)), partial, { merge: true });
+  }
+
+  async deleteLeaveRequest(id) {
+    if (!id) { console.warn("deleteLeaveRequest called without id"); return; }
+    if (!this.db) {
+      const arr = (await this.fetchLeaveRequests()).filter(r => r.id !== id);
+      localStorage.setItem('atkin_leave_requests', JSON.stringify(arr.map(r => ({...r, startDate:r.startDate.toISOString(), endDate:r.endDate.toISOString()}))));
+      return;
+    }
+    const { doc, deleteDoc } = this.api;
+    await deleteDoc(doc(this.db, "leave_requests", String(id)));
+  }
+
+  async createShutdown(s) {
+    if (!this.db) {
+      const arr = await this.fetchWorkshopShutdowns();
+      arr.push({ ...s, id: `local-${Date.now()}` });
+      localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:x.startDate.toISOString(), endDate:x.endDate.toISOString()}))));
+      return;
+    }
+    const { collection, doc, setDoc } = this.api;
+    const ref = doc(collection(this.db, "workshop_shutdowns"));
+    await setDoc(ref, { ...s, id: ref.id });
+  }
+
+  async updateShutdown(id, partial) {
+    if (!this.db) {
+      const arr = await this.fetchWorkshopShutdowns();
+      const i = arr.findIndex(x => x.id === id);
+      if (i >= 0) {
+        arr[i] = { ...arr[i], ...partial };
+        localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:new Date(x.startDate).toISOString(), endDate:new Date(x.endDate).toISOString()}))));
+      }
+      return;
+    }
+    const { doc, setDoc } = this.api;
+    await setDoc(doc(this.db, "workshop_shutdowns", String(id)), partial, { merge: true });
+  }
+
+  async deleteWorkshopShutdown(id) {
+    if (!this.db) {
+      const arr = (await this.fetchWorkshopShutdowns()).filter(x => x.id !== id);
+      localStorage.setItem('atkin_workshop_shutdowns', JSON.stringify(arr.map(x => ({...x, startDate:new Date(x.startDate).toISOString(), endDate:new Date(x.endDate).toISOString()}))));
+      return;
+    }
+    const { doc, deleteDoc } = this.api;
+    await deleteDoc(doc(this.db, "workshop_shutdowns", String(id)));
+  }
+}
+
     ReactDOM.render(<LeaveCalendar />, document.getElementById('root'));
   </script>
 </body>

@@ -1,0 +1,148 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="1894.7">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+  </style>
+</head>
+<body>
+<p class="p1">&lt;!DOCTYPE html&gt;</p>
+<p class="p1">&lt;html lang="en"&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta charset="UTF-8" /&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="viewport" content="width=device-width, initial-scale=1.0"/&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;title&gt;Role Admin — Atkin Leave Calendar&lt;/title&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;link rel="icon" href="data:,"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://unpkg.com/@babel/standalone/babel.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://cdn.tailwindcss.com"&gt;&lt;/script&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body class="bg-slate-50"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="root"&gt;&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script type="module" src="./firebase-init.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script type="text/babel"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const { useEffect, useState } = React;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const { createRoot } = ReactDOM;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>initializeApp, getAuth, onAuthStateChanged, signOut,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>getFirestore, collection, onSnapshot, doc, updateDoc, getDoc</p>
+<p class="p1"><span class="Apple-converted-space">    </span>} = window.firebaseExports;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// SAME CONFIG as index.html</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const firebaseConfig = {/* paste the SAME config you use in index.html */};</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>let app = window.__FB_APP__;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (!app) { app = initializeApp(firebaseConfig); window.__FB_APP__ = app; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const auth = getAuth(app);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const db = getFirestore(app);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>async function getMyRole(uid) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const meRef = doc(db, "users", uid);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const snap = await getDoc(meRef);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>return snap.exists() ? (snap.data().role || "employee") : "employee";</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function App() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const [user, setUser] = useState(null);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const [role, setRole] = useState(null);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const [users, setUsers] = useState([]);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const [err, setErr] = useState("");</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>useEffect(() =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const unsub = onAuthStateChanged(auth, async (u) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>if (!u) { setUser(null); setRole(null); return; }</p>
+<p class="p1"><span class="Apple-converted-space">          </span>setUser(u);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>setRole(await getMyRole(u.uid));</p>
+<p class="p1"><span class="Apple-converted-space">        </span>});</p>
+<p class="p1"><span class="Apple-converted-space">        </span>return () =&gt; unsub();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}, []);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>useEffect(() =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>if (role !== "manager") return;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const unsub = onSnapshot(collection(db, "users"), (snap) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>const list = [];</p>
+<p class="p1"><span class="Apple-converted-space">          </span>snap.forEach(d =&gt; list.push({ id: d.id, ...d.data() }));</p>
+<p class="p1"><span class="Apple-converted-space">          </span>setUsers(list);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}, e =&gt; setErr(e.message));</p>
+<p class="p1"><span class="Apple-converted-space">        </span>return () =&gt; unsub &amp;&amp; unsub();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}, [role]);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>const setUserRole = async (uid, newRole) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>try {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>await updateDoc(doc(db, "users", uid), { role: newRole });</p>
+<p class="p1"><span class="Apple-converted-space">        </span>} catch (e) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>alert(e.message);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>};</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (!user) return &lt;Gate text="Please sign in via index.html, then open this page." /&gt;;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (role !== "manager") return &lt;Gate text="Not authorized — manager role required." /&gt;;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>return (</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div className="max-w-3xl mx-auto p-4 space-y-4"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;div className="flex items-center justify-between"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;h1 className="text-xl font-semibold"&gt;Role Admin&lt;/h1&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;div className="flex items-center gap-3"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;span className="text-sm text-slate-600"&gt;{user.email}&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;button onClick={()=&gt;signOut(auth)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"&gt;Sign out&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">          </span>{err &amp;&amp; &lt;p className="text-sm text-red-600"&gt;{err}&lt;/p&gt;}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;div className="rounded-xl border bg-white"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;table className="w-full text-sm"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;thead className="bg-slate-50"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                </span>&lt;tr&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;th className="text-left px-3 py-2"&gt;User&lt;/th&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;th className="text-left px-3 py-2"&gt;Email&lt;/th&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;th className="text-left px-3 py-2"&gt;Role&lt;/th&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;th className="px-3 py-2"&gt;Actions&lt;/th&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                </span>&lt;/tr&gt;</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;/thead&gt;</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;tbody&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                </span>{users.map(u =&gt; (</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;tr key={u.id} className="border-t"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                    </span>&lt;td className="px-3 py-2"&gt;{u.displayName || u.id}&lt;/td&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                    </span>&lt;td className="px-3 py-2"&gt;{u.email || "—"}&lt;/td&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                    </span>&lt;td className="px-3 py-2"&gt;{u.role || "employee"}&lt;/td&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                    </span>&lt;td className="px-3 py-2 text-right"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                      </span>&lt;div className="inline-flex gap-2"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                        </span>&lt;button onClick={()=&gt;setUserRole(u.id,'employee')} className="rounded border px-2 py-1 hover:bg-slate-50"&gt;Set employee&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                        </span>&lt;button onClick={()=&gt;setUserRole(u.id,'manager')} className="rounded border px-2 py-1 hover:bg-slate-50"&gt;Set manager&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                      </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                    </span>&lt;/td&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;/tr&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                </span>))}</p>
+<p class="p1"><span class="Apple-converted-space">                </span>{users.length === 0 &amp;&amp; (</p>
+<p class="p1"><span class="Apple-converted-space">                  </span>&lt;tr&gt;&lt;td colSpan="4" className="px-3 py-6 text-center text-slate-500"&gt;No users yet.&lt;/td&gt;&lt;/tr&gt;</p>
+<p class="p1"><span class="Apple-converted-space">                </span>)}</p>
+<p class="p1"><span class="Apple-converted-space">              </span>&lt;/tbody&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;/table&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function Gate({ text }) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>return &lt;div className="min-h-screen grid place-items-center p-6"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div className="bg-white rounded-2xl shadow p-6"&gt;{text}&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;/div&gt;;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const root = createRoot(document.getElementById('root'));</p>
+<p class="p1"><span class="Apple-converted-space">    </span>root.render(&lt;App /&gt;);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
+</body>
+</html>
